@@ -1,0 +1,35 @@
+# ============================================================
+# SafeWatch — AI-Powered CCTV Threat Detection System
+# Production Dependencies
+# ============================================================
+
+# Core Runtime
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+numpy>=1.24.0
+scipy>=1.11.0
+PyYAML>=6.0.1
+Pillow>=10.0.0
+imutils>=0.5.4
+
+# AI / ML Inference
+ultralytics>=8.0.200
+mediapipe>=0.10.7
+onnxruntime>=1.16.0
+
+# Async & Scheduling
+schedule>=1.2.0
+
+# Telegram Alerting
+python-telegram-bot>=20.6
+
+# Dashboard
+streamlit>=1.28.0
+plotly>=5.18.0
+pandas>=2.1.0
+
+# Logging
+loguru>=0.7.2
+
+# Environment
+python-dotenv>=1.0.0
