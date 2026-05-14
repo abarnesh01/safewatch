@@ -1,12 +1,11 @@
 """
-SafeWatch Incident Logger
-High-level incident logging interface with deduplication and cooldown.
+SafeWatch — IncidentLogger
+High-level wrapper around DatabaseManager for threat incident logging.
 """
 
-import json
-import uuid
+import csv
+from pathlib import Path
 from datetime import datetime, timedelta
-from threading import Lock
 from typing import Optional
 
 from loguru import logger
@@ -15,103 +14,165 @@ from database.db_manager import DatabaseManager
 
 
 class IncidentLogger:
-    """Logs threat incidents with deduplication, cooldown, and analytics."""
+    """High-level incident logging and querying interface wrapping DatabaseManager."""
 
-    def __init__(self, db_manager: DatabaseManager, default_cooldown: int = 30) -> None:
+    def __init__(self, db_manager: DatabaseManager):
         self._db = db_manager
-        self._default_cooldown = default_cooldown
-        self._cooldown_map: dict = {}
-        self._lock = Lock()
-        logger.info("IncidentLogger initialized (cooldown={}s)", default_cooldown)
+        self._incident_counter = 0
+        logger.info("IncidentLogger initialized")
 
-    def _generate_incident_id(self) -> str:
-        ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-        short_uuid = uuid.uuid4().hex[:8]
-        return f"SW-{ts}-{short_uuid}"
+    def __repr__(self) -> str:
+        return f"IncidentLogger(db={self._db!r})"
 
-    def _is_on_cooldown(self, camera_id: str, threat_type: str, cooldown: int) -> bool:
-        key = f"{camera_id}:{threat_type}"
-        with self._lock:
-            last_time = self._cooldown_map.get(key)
-            if last_time and (datetime.utcnow() - last_time).total_seconds() < cooldown:
-                return True
-            return False
+    def log_threat(
+        self,
+        threat_event: dict,
+        camera_id: str,
+        snapshot_path: str = "",
+        recording_path: str = "",
+    ) -> int:
+        """
+        Log a threat event to the database.
 
-    def _update_cooldown(self, camera_id: str, threat_type: str) -> None:
-        key = f"{camera_id}:{threat_type}"
-        with self._lock:
-            self._cooldown_map[key] = datetime.utcnow()
+        Args:
+            threat_event: Dict with keys: threat_type, confidence, severity,
+                         persons_involved, description
+            camera_id: Camera that detected the threat
+            snapshot_path: Path to saved snapshot image
+            recording_path: Path to saved video recording
 
-    def log_incident(self, camera_id: str, camera_name: str, threat_type: str,
-                     severity: str, confidence: float, risk_level: str,
-                     description: str = "", snapshot_path: str = "",
-                     person_count: int = 0, zone_name: str = "",
-                     cooldown: Optional[int] = None,
-                     metadata: Optional[dict] = None) -> Optional[str]:
-        cd = cooldown if cooldown is not None else self._default_cooldown
-        if self._is_on_cooldown(camera_id, threat_type, cd):
-            logger.debug("Incident suppressed (cooldown): {} on {}", threat_type, camera_id)
-            return None
+        Returns:
+            The incident ID
+        """
+        self._incident_counter += 1
+        incident_data = {
+            "camera_id": camera_id,
+            "timestamp": threat_event.get("timestamp", datetime.now().isoformat()),
+            "threat_type": threat_event.get("threat_type", "UNKNOWN"),
+            "confidence": threat_event.get("confidence", 0.0),
+            "severity": threat_event.get("severity", "LOW"),
+            "persons_involved": len(threat_event.get("persons_involved", [])),
+            "description": threat_event.get("description", ""),
+            "snapshot_path": snapshot_path,
+            "recording_path": recording_path,
+            "alert_sent": threat_event.get("alert_sent", 0),
+        }
+        incident_id = self._db.log_incident(incident_data)
+        logger.info(
+            f"Threat logged: incident_id={incident_id} type={incident_data['threat_type']} "
+            f"camera={camera_id} severity={incident_data['severity']}"
+        )
+        return incident_id
 
-        incident_id = self._generate_incident_id()
-        metadata_json = json.dumps(metadata) if metadata else "{}"
+    def get_threat_stats(self, last_hours: int = 24) -> dict:
+        """
+        Get threat statistics for the last N hours.
 
-        success = self._db.insert_incident(
-            incident_id=incident_id,
+        Args:
+            last_hours: Number of hours to look back
+
+        Returns:
+            Dict with keys: total, by_type, by_severity, by_camera, avg_confidence
+        """
+        start_time = (datetime.now() - timedelta(hours=last_hours)).isoformat()
+        incidents = self._db.get_incidents(start_date=start_time, limit=10000)
+
+        by_type: dict[str, int] = {}
+        by_severity: dict[str, int] = {}
+        by_camera: dict[str, int] = {}
+        total_confidence = 0.0
+
+        for inc in incidents:
+            t = inc.get("threat_type", "UNKNOWN")
+            s = inc.get("severity", "LOW")
+            c = inc.get("camera_id", "UNKNOWN")
+
+            by_type[t] = by_type.get(t, 0) + 1
+            by_severity[s] = by_severity.get(s, 0) + 1
+            by_camera[c] = by_camera.get(c, 0) + 1
+            total_confidence += inc.get("confidence", 0.0)
+
+        total = len(incidents)
+        avg_confidence = total_confidence / total if total > 0 else 0.0
+
+        return {
+            "total": total,
+            "last_hours": last_hours,
+            "by_type": by_type,
+            "by_severity": by_severity,
+            "by_camera": by_camera,
+            "avg_confidence": round(avg_confidence, 3),
+        }
+
+    def get_timeline(self, camera_id: str, date: Optional[str] = None) -> list[dict]:
+        """
+        Get an ordered timeline of incidents for a camera on a specific date.
+
+        Args:
+            camera_id: Camera ID to filter by
+            date: Date in YYYY-MM-DD format. Defaults to today.
+
+        Returns:
+            Ordered list of incidents for the camera on the given date.
+        """
+        if date is None:
+            date = datetime.now().strftime("%Y-%m-%d")
+
+        start_date = f"{date} 00:00:00"
+        end_date = f"{date} 23:59:59"
+
+        incidents = self._db.get_incidents(
             camera_id=camera_id,
-            camera_name=camera_name,
-            threat_type=threat_type,
-            severity=severity,
-            confidence=confidence,
-            risk_level=risk_level,
-            description=description,
-            snapshot_path=snapshot_path,
-            person_count=person_count,
-            zone_name=zone_name,
-            metadata_json=metadata_json,
+            start_date=start_date,
+            end_date=end_date,
+            limit=1000,
+        )
+        return sorted(incidents, key=lambda x: x.get("timestamp", ""))
+
+    def export_csv(self, start_date: str, end_date: str, output_path: str) -> str:
+        """
+        Export incidents to a CSV file.
+
+        Args:
+            start_date: Start date (ISO format or YYYY-MM-DD)
+            end_date: End date (ISO format or YYYY-MM-DD)
+            output_path: Path for the output CSV file
+
+        Returns:
+            The absolute path of the created CSV file.
+        """
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        incidents = self._db.get_incidents(
+            start_date=start_date,
+            end_date=end_date,
+            limit=100000,
         )
 
-        if success:
-            self._update_cooldown(camera_id, threat_type)
-            logger.info(
-                "Incident logged: {} | {} | {} | conf={:.2f} | risk={}",
-                incident_id, camera_id, threat_type, confidence, risk_level,
-            )
-            return incident_id
-
-        logger.error("Failed to log incident for {} on {}", threat_type, camera_id)
-        return None
-
-    def get_recent_incidents(self, hours: int = 1, camera_id: str = None,
-                             threat_type: str = None, limit: int = 50) -> list:
-        start = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
-        return self._db.get_incidents(
-            camera_id=camera_id,
-            threat_type=threat_type,
-            start_date=start,
-            limit=limit,
-        )
-
-    def get_stats_summary(self, hours: int = 24) -> dict:
-        total = self._db.get_incident_count(hours=hours)
-        threat_types = [
-            "fight", "fall", "harassment", "assault", "unconscious",
-            "trespass", "crowd_panic", "accident", "abuse",
+        fieldnames = [
+            "id", "camera_id", "timestamp", "threat_type", "confidence",
+            "severity", "persons_involved", "description", "snapshot_path",
+            "recording_path", "alert_sent", "acknowledged", "created_at",
         ]
-        by_type = {}
-        for tt in threat_types:
-            by_type[tt] = self._db.get_incident_count(threat_type=tt, hours=hours)
-        return {"total": total, "by_type": by_type, "period_hours": hours}
 
-    def mark_alert_sent(self, incident_id: str) -> bool:
-        now = datetime.utcnow().isoformat()
-        r = self._db.execute(
-            "UPDATE incidents SET alert_sent=1, updated_at=? WHERE incident_id=?",
-            (now, incident_id),
+        with open(out, "w", newline="", encoding="utf-8") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for inc in incidents:
+                writer.writerow(inc)
+
+        logger.info(f"Exported {len(incidents)} incidents to {out}")
+        return str(out.resolve())
+
+    def mark_alert_sent(self, incident_id: int):
+        """Mark that an alert was sent for an incident."""
+        self._db.log_system_event(
+            level="INFO",
+            message=f"Alert sent for incident {incident_id}",
         )
-        return r.success and r.row_count > 0
 
-    def clear_cooldowns(self) -> None:
-        with self._lock:
-            self._cooldown_map.clear()
-            logger.info("All incident cooldowns cleared")
+    def get_unacknowledged(self, limit: int = 50) -> list[dict]:
+        """Get recent unacknowledged incidents."""
+        all_recent = self._db.get_recent_incidents(n=limit * 2)
+        return [inc for inc in all_recent if inc.get("acknowledged", 0) == 0][:limit]
