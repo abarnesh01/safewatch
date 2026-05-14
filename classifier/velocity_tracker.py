@@ -1,78 +1,293 @@
 """
-SafeWatch Velocity Tracker
-Tracks person and joint movement speed over time for threat analysis.
+SafeWatch — VelocityTracker
+Tracks position history and computes velocities/accelerations for each person.
 """
 
 import time
-import numpy as np
-from typing import Dict, List, Tuple, Optional
-from collections import deque
+import threading
+from collections import defaultdict, deque
+from typing import Optional
 
+import numpy as np
 from loguru import logger
-from detection.pose_estimator import PersonPose
+
+from detection.pose_estimator import PoseResult
 
 
 class VelocityTracker:
-    """Tracks velocities of individuals and their body parts across frames."""
+    """
+    Tracks per-person joint position history and computes velocities,
+    accelerations, and trajectories over time.
+    """
 
-    def __init__(self, window_size: int = 10) -> None:
-        self._window_size = window_size
-        # Map of person_id -> joint_name -> deque of (timestamp, x, y)
-        self._history: Dict[int, Dict[str, deque]] = {}
-        logger.info("VelocityTracker initialized (window_size={})", window_size)
+    def __init__(self, max_history: int = 60, cleanup_timeout: float = 5.0):
+        self._max_history = max_history
+        self._cleanup_timeout = cleanup_timeout
+        self._lock = threading.Lock()
+        self._history: dict[int, deque] = defaultdict(lambda: deque(maxlen=max_history))
+        self._last_seen: dict[int, float] = {}
+        logger.info(f"VelocityTracker initialized (history={max_history}, timeout={cleanup_timeout}s)")
 
-    def track(self, pose: PersonPose) -> Dict[str, float]:
-        """Update history and compute current velocities for a person's joints."""
-        pid = pose.person_id
+    def __repr__(self) -> str:
+        with self._lock:
+            return f"VelocityTracker(tracking={len(self._history)} persons)"
+
+    def update(self, person_id: int, pose_result: PoseResult, timestamp: float):
+        """
+        Record a new pose observation for a person.
+
+        Args:
+            person_id: The tracked person's ID
+            pose_result: Current PoseResult
+            timestamp: Unix timestamp of the observation
+        """
+        with self._lock:
+            entry = {
+                "timestamp": timestamp,
+                "keypoints": {},
+            }
+
+            for name in ["nose", "left_shoulder", "right_shoulder",
+                         "left_elbow", "right_elbow", "left_wrist", "right_wrist",
+                         "left_hip", "right_hip", "left_knee", "right_knee",
+                         "left_ankle", "right_ankle"]:
+                kp = pose_result.get_landmark(name)
+                if kp is not None:
+                    entry["keypoints"][name] = {
+                        "x": kp["x"],
+                        "y": kp["y"],
+                        "abs_x": kp.get("abs_x", kp["x"]),
+                        "abs_y": kp.get("abs_y", kp["y"]),
+                    }
+
+            self._history[person_id].append(entry)
+            self._last_seen[person_id] = timestamp
+
+        self._cleanup()
+
+    def _cleanup(self):
+        """Remove persons not seen for cleanup_timeout seconds."""
         now = time.time()
-        velocities = {}
+        to_remove = []
+        with self._lock:
+            for pid, last_time in self._last_seen.items():
+                if now - last_time > self._cleanup_timeout:
+                    to_remove.append(pid)
 
-        if pid not in self._history:
-            self._history[pid] = {}
+            for pid in to_remove:
+                if pid in self._history:
+                    del self._history[pid]
+                if pid in self._last_seen:
+                    del self._last_seen[pid]
 
-        for name, lm in pose.landmarks.items():
-            if name not in self._history[pid]:
-                self._history[pid][name] = deque(maxlen=self._window_size)
-            
-            # Store current position
-            self._history[pid][name].append((now, lm.x, lm.y))
-            
-            # Calculate velocity if enough history
-            if len(self._history[pid][name]) >= 2:
-                hist = self._history[pid][name]
-                dt = hist[-1][0] - hist[0][0]
-                
-                if dt > 0:
-                    dx = hist[-1][1] - hist[0][1]
-                    dy = hist[-1][2] - hist[0][2]
-                    dist = np.sqrt(dx**2 + dy**2)
-                    velocities[f"{name}_velocity"] = dist / dt
-                else:
-                    velocities[f"{name}_velocity"] = 0.0
-            else:
-                velocities[f"{name}_velocity"] = 0.0
+    def get_velocity(self, person_id: int, joint_name: str) -> float:
+        """
+        Get the velocity of a joint in pixels per second.
 
-        # Overall person velocity (center of mass/hip)
-        hip_keys = ["left_hip", "right_hip"]
-        if all(k in velocities for k in [f"{h}_velocity" for h in hip_keys]):
-            velocities["person_velocity"] = (velocities["left_hip_velocity"] + 
-                                             velocities["right_hip_velocity"]) / 2
-        else:
-            # Fallback to mean of all available joint velocities
-            if velocities:
-                velocities["person_velocity"] = sum(velocities.values()) / len(velocities)
-            else:
-                velocities["person_velocity"] = 0.0
+        Args:
+            person_id: Person ID to query
+            joint_name: Name of the joint
 
-        return velocities
+        Returns:
+            Velocity in pixels per second, or 0.0 if unknown.
+        """
+        with self._lock:
+            history = self._history.get(person_id)
+            if history is None or len(history) < 2:
+                return 0.0
 
-    def cleanup(self, active_person_ids: List[int]) -> None:
-        """Remove history for persons no longer in view."""
-        pids_to_remove = [pid for pid in self._history if pid not in active_person_ids]
-        for pid in pids_to_remove:
-            del self._history[pid]
-            logger.debug("Cleaned up velocity history for person {}", pid)
+            curr = history[-1]
+            prev = history[-2]
 
-    def reset(self) -> None:
-        self._history.clear()
-        logger.debug("VelocityTracker reset")
+            curr_kp = curr["keypoints"].get(joint_name)
+            prev_kp = prev["keypoints"].get(joint_name)
+
+            if curr_kp is None or prev_kp is None:
+                return 0.0
+
+            dt = curr["timestamp"] - prev["timestamp"]
+            if dt <= 0:
+                return 0.0
+
+            dx = curr_kp["abs_x"] - prev_kp["abs_x"]
+            dy = curr_kp["abs_y"] - prev_kp["abs_y"]
+            distance = np.sqrt(dx**2 + dy**2)
+
+            return float(distance / dt)
+
+    def get_acceleration(self, person_id: int, joint_name: str) -> float:
+        """
+        Get the acceleration of a joint in pixels per second squared.
+
+        Args:
+            person_id: Person ID
+            joint_name: Joint name
+
+        Returns:
+            Acceleration in pixels/s², or 0.0 if unknown.
+        """
+        with self._lock:
+            history = self._history.get(person_id)
+            if history is None or len(history) < 3:
+                return 0.0
+
+            entries = [history[-3], history[-2], history[-1]]
+
+        velocities = []
+        for i in range(1, len(entries)):
+            curr_kp = entries[i]["keypoints"].get(joint_name)
+            prev_kp = entries[i-1]["keypoints"].get(joint_name)
+
+            if curr_kp is None or prev_kp is None:
+                return 0.0
+
+            dt = entries[i]["timestamp"] - entries[i-1]["timestamp"]
+            if dt <= 0:
+                return 0.0
+
+            dx = curr_kp["abs_x"] - prev_kp["abs_x"]
+            dy = curr_kp["abs_y"] - prev_kp["abs_y"]
+            vel = np.sqrt(dx**2 + dy**2) / dt
+            velocities.append((vel, entries[i]["timestamp"]))
+
+        if len(velocities) < 2:
+            return 0.0
+
+        dv = velocities[1][0] - velocities[0][0]
+        dt = velocities[1][1] - velocities[0][1]
+
+        if dt <= 0:
+            return 0.0
+
+        return float(dv / dt)
+
+    def get_trajectory(self, person_id: int, n_frames: int = 10) -> list[tuple[float, float]]:
+        """
+        Get recent position trajectory for a person (using hip center).
+
+        Args:
+            person_id: Person ID
+            n_frames: Number of recent frames to include
+
+        Returns:
+            List of (x, y) positions.
+        """
+        with self._lock:
+            history = self._history.get(person_id)
+            if history is None:
+                return []
+
+            positions = []
+            entries = list(history)[-n_frames:]
+            for entry in entries:
+                lh = entry["keypoints"].get("left_hip")
+                rh = entry["keypoints"].get("right_hip")
+                if lh is not None and rh is not None:
+                    cx = (lh["abs_x"] + rh["abs_x"]) / 2
+                    cy = (lh["abs_y"] + rh["abs_y"]) / 2
+                    positions.append((float(cx), float(cy)))
+                elif lh is not None:
+                    positions.append((float(lh["abs_x"]), float(lh["abs_y"])))
+                elif rh is not None:
+                    positions.append((float(rh["abs_x"]), float(rh["abs_y"])))
+
+            return positions
+
+    def get_relative_velocity(self, person_id_1: int, person_id_2: int) -> float:
+        """
+        Get closing/opening speed between two persons in pixels per second.
+        Positive = closing, Negative = moving apart.
+
+        Args:
+            person_id_1: First person ID
+            person_id_2: Second person ID
+
+        Returns:
+            Relative velocity (positive = approaching), or 0.0 if unknown.
+        """
+        with self._lock:
+            h1 = self._history.get(person_id_1)
+            h2 = self._history.get(person_id_2)
+
+            if h1 is None or h2 is None or len(h1) < 2 or len(h2) < 2:
+                return 0.0
+
+        def _get_center(entry: dict) -> Optional[tuple]:
+            lh = entry["keypoints"].get("left_hip")
+            rh = entry["keypoints"].get("right_hip")
+            if lh and rh:
+                return ((lh["abs_x"] + rh["abs_x"]) / 2, (lh["abs_y"] + rh["abs_y"]) / 2)
+            return None
+
+        with self._lock:
+            curr1 = _get_center(h1[-1])
+            prev1 = _get_center(h1[-2])
+            curr2 = _get_center(h2[-1])
+            prev2 = _get_center(h2[-2])
+
+            dt1 = h1[-1]["timestamp"] - h1[-2]["timestamp"]
+            dt2 = h2[-1]["timestamp"] - h2[-2]["timestamp"]
+
+        if any(c is None for c in [curr1, prev1, curr2, prev2]):
+            return 0.0
+
+        dt = (dt1 + dt2) / 2
+        if dt <= 0:
+            return 0.0
+
+        prev_dist = np.sqrt((prev1[0] - prev2[0])**2 + (prev1[1] - prev2[1])**2)
+        curr_dist = np.sqrt((curr1[0] - curr2[0])**2 + (curr1[1] - curr2[1])**2)
+
+        closing_speed = (prev_dist - curr_dist) / dt
+        return float(closing_speed)
+
+    def get_average_velocity(self, person_id: int, n_frames: int = 5) -> float:
+        """
+        Get the average overall velocity over the last N frames.
+
+        Returns:
+            Average velocity in pixels/s, or 0.0.
+        """
+        with self._lock:
+            history = self._history.get(person_id)
+            if history is None or len(history) < 2:
+                return 0.0
+
+            entries = list(history)[-n_frames:]
+
+        velocities = []
+        for joint in ["left_hip", "right_hip", "left_shoulder", "right_shoulder"]:
+            for i in range(1, len(entries)):
+                curr_kp = entries[i]["keypoints"].get(joint)
+                prev_kp = entries[i-1]["keypoints"].get(joint)
+                if curr_kp is None or prev_kp is None:
+                    continue
+                dt = entries[i]["timestamp"] - entries[i-1]["timestamp"]
+                if dt <= 0:
+                    continue
+                dx = curr_kp["abs_x"] - prev_kp["abs_x"]
+                dy = curr_kp["abs_y"] - prev_kp["abs_y"]
+                vel = np.sqrt(dx**2 + dy**2) / dt
+                velocities.append(vel)
+
+        if not velocities:
+            return 0.0
+        return float(np.mean(velocities))
+
+    def get_history_length(self, person_id: int) -> int:
+        """Get the number of stored frames for a person."""
+        with self._lock:
+            history = self._history.get(person_id)
+            return len(history) if history else 0
+
+    def get_all_tracked_ids(self) -> list[int]:
+        """Get list of all currently tracked person IDs."""
+        with self._lock:
+            return list(self._history.keys())
+
+    def clear(self):
+        """Clear all tracking data."""
+        with self._lock:
+            self._history.clear()
+            self._last_seen.clear()
+            logger.debug("VelocityTracker cleared")
