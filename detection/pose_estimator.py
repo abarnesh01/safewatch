@@ -1,13 +1,14 @@
 """
-SafeWatch Pose Estimator
-MediaPipe-based pose estimation for human behavior analysis.
+SafeWatch — PoseEstimator
+MediaPipe-based pose estimation with skeleton drawing and joint utilities.
 """
+
+import threading
+from dataclasses import dataclass, field
+from typing import Optional
 
 import cv2
 import numpy as np
-from typing import Optional, List, Dict
-from dataclasses import dataclass
-
 from loguru import logger
 
 try:
@@ -15,169 +16,269 @@ try:
     MP_AVAILABLE = True
 except ImportError:
     MP_AVAILABLE = False
-    logger.warning("MediaPipe not installed, pose estimation disabled")
+    logger.warning("MediaPipe not available — pose estimation disabled")
+
+from detection.person_detector import Person
+
+
+KEYPOINT_NAMES = [
+    "nose", "left_eye_inner", "left_eye", "left_eye_outer",
+    "right_eye_inner", "right_eye", "right_eye_outer",
+    "left_ear", "right_ear", "mouth_left", "mouth_right",
+    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist", "left_pinky", "right_pinky",
+    "left_index", "right_index", "left_thumb", "right_thumb",
+    "left_hip", "right_hip", "left_knee", "right_knee",
+    "left_ankle", "right_ankle", "left_heel", "right_heel",
+    "left_foot_index", "right_foot_index",
+]
+
+SKELETON_CONNECTIONS = [
+    (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
+    (11, 23), (12, 24), (23, 24), (23, 25), (24, 26),
+    (25, 27), (26, 28),
+]
+
+IMPORTANT_KEYPOINTS = [
+    "nose", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+    "left_wrist", "right_wrist", "left_hip", "right_hip",
+    "left_knee", "right_knee", "left_ankle", "right_ankle",
+]
 
 
 @dataclass
-class PoseLandmark:
-    """Named joint landmark with coordinates and visibility."""
-    name: str
-    x: float
-    y: float
-    z: float
-    visibility: float
-
-
-@dataclass
-class PersonPose:
-    """Complete pose estimation for a person."""
+class PoseResult:
+    """Contains pose estimation results for a single person."""
     person_id: int
-    landmarks: Dict[str, PoseLandmark]
-    world_landmarks: Dict[str, PoseLandmark]
-    bbox: tuple  # (x1, y1, x2, y2) relative to original frame
+    landmarks: list[dict]  # 33 points with x, y, z, visibility
+    keypoints: dict  # Named keypoints
+    bbox: tuple[int, int, int, int]
+    confidence: float
+
+    def __repr__(self) -> str:
+        n_visible = sum(1 for lm in self.landmarks if lm.get("visibility", 0) > 0.5)
+        return (
+            f"PoseResult(person_id={self.person_id}, "
+            f"visible_landmarks={n_visible}/33, confidence={self.confidence:.2f})"
+        )
+
+    def get_landmark(self, name: str) -> Optional[dict]:
+        """Get a landmark by name, returning None if not confident enough."""
+        kp = self.keypoints.get(name)
+        if kp is not None and kp.get("visibility", 0) > 0.3:
+            return kp
+        return None
 
 
 class PoseEstimator:
-    """High-performance pose estimator using MediaPipe."""
+    """
+    MediaPipe Pose estimator that processes cropped person bounding boxes
+    to extract 33 body landmarks per person.
+    """
 
-    LANDMARK_NAMES = [
-        "nose", "left_eye_inner", "left_eye", "left_eye_outer",
-        "right_eye_inner", "right_eye", "right_eye_outer",
-        "left_ear", "right_ear", "mouth_left", "mouth_right",
-        "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-        "left_wrist", "right_wrist", "left_pinky", "right_pinky",
-        "left_index", "right_index", "left_thumb", "right_thumb",
-        "left_hip", "right_hip", "left_knee", "right_knee",
-        "left_ankle", "right_ankle", "left_heel", "right_heel",
-        "left_foot_index", "right_foot_index"
-    ]
+    def __init__(self, config: dict):
+        self._config = config.get("detection", {})
+        self._model_complexity = self._config.get("pose_model_complexity", 0)
+        self._min_confidence = self._config.get("pose_min_confidence", 0.5)
+        self._lock = threading.Lock()
+        self._pose = None
 
-    def __init__(self, model_complexity: int = 1,
-                 min_detection_confidence: float = 0.5,
-                 min_tracking_confidence: float = 0.5) -> None:
-        self._complexity = model_complexity
-        self._min_detection_conf = min_detection_confidence
-        self._min_tracking_conf = min_tracking_confidence
-        self._pose_engine = None
-        self._initialized = False
-        self._initialize()
-
-    def _initialize(self) -> None:
-        if not MP_AVAILABLE:
-            return
-        try:
+        if MP_AVAILABLE:
             self._mp_pose = mp.solutions.pose
-            self._pose_engine = self._mp_pose.Pose(
+            self._mp_draw = mp.solutions.drawing_utils
+            self._pose = self._mp_pose.Pose(
                 static_image_mode=False,
-                model_complexity=self._complexity,
-                smooth_landmarks=True,
-                enable_segmentation=False,
-                min_detection_confidence=self._min_detection_conf,
-                min_tracking_confidence=self._min_tracking_conf
+                model_complexity=self._model_complexity,
+                min_detection_confidence=self._min_confidence,
+                min_tracking_confidence=self._min_confidence,
             )
-            self._initialized = True
-            logger.info("MediaPipe Pose Estimator initialized (complexity={})", self._complexity)
-        except Exception as exc:
-            logger.error("Failed to initialize MediaPipe Pose: {}", exc)
-            self._initialized = False
+            logger.info(f"PoseEstimator initialized (complexity={self._model_complexity})")
+        else:
+            logger.warning("PoseEstimator running without MediaPipe — no pose data")
 
-    def estimate(self, frame: np.ndarray, person_id: int = 0, 
-                 bbox: Optional[tuple] = None) -> Optional[PersonPose]:
-        """Estimate pose for a single person within a bounding box."""
-        if not self._initialized or self._pose_engine is None:
-            return None
+    def __repr__(self) -> str:
+        available = self._pose is not None
+        return f"PoseEstimator(available={available}, complexity={self._model_complexity})"
 
-        try:
-            # If bbox is provided, crop the frame for better accuracy
-            input_frame = frame
-            x1, y1, x2, y2 = 0, 0, frame.shape[1], frame.shape[0]
-            
-            if bbox:
-                x1, y1, x2, y2 = map(int, bbox)
-                # Add padding
-                pad_w = int((x2 - x1) * 0.2)
-                pad_h = int((y2 - y1) * 0.2)
-                x1 = max(0, x1 - pad_w)
-                y1 = max(0, y1 - pad_h)
-                x2 = min(frame.shape[1], x2 + pad_w)
-                y2 = min(frame.shape[0], y2 + pad_h)
-                
-                if x2 > x1 and y2 > y1:
-                    input_frame = frame[y1:y2, x1:x2]
-                else:
-                    return None
+    def estimate(self, frame: np.ndarray, persons: list[Person]) -> list[PoseResult]:
+        """
+        Estimate poses for each detected person.
 
-            # Convert to RGB for MediaPipe
-            rgb_frame = cv2.cvtColor(input_frame, cv2.COLOR_BGR2RGB)
-            results = self._pose_engine.process(rgb_frame)
+        Args:
+            frame: Full BGR frame
+            persons: List of detected Person objects
 
-            if not results.pose_landmarks:
-                return None
+        Returns:
+            List of PoseResult objects, one per person with detected pose
+        """
+        if self._pose is None:
+            return []
 
-            landmarks = {}
-            world_landmarks = {}
-            
-            h, w = input_frame.shape[:2]
-            
-            for i, name in enumerate(self.LANDMARK_NAMES):
-                lm = results.pose_landmarks.landmark[i]
-                # Map back to original frame coordinates
-                abs_x = (lm.x * w) + x1
-                abs_y = (lm.y * h) + y1
-                
-                landmarks[name] = PoseLandmark(
-                    name=name, x=abs_x, y=abs_y, z=lm.z, visibility=lm.visibility
-                )
-                
-                if results.pose_world_landmarks:
-                    wlm = results.pose_world_landmarks.landmark[i]
-                    world_landmarks[name] = PoseLandmark(
-                        name=name, x=wlm.x, y=wlm.y, z=wlm.z, visibility=wlm.visibility
-                    )
+        results: list[PoseResult] = []
+        h, w = frame.shape[:2]
 
-            return PersonPose(
-                person_id=person_id,
+        for person in persons:
+            x1, y1, x2, y2 = person.bbox
+            pad_x = int((x2 - x1) * 0.1)
+            pad_y = int((y2 - y1) * 0.1)
+            cx1 = max(0, x1 - pad_x)
+            cy1 = max(0, y1 - pad_y)
+            cx2 = min(w, x2 + pad_x)
+            cy2 = min(h, y2 + pad_y)
+
+            crop = frame[cy1:cy2, cx1:cx2]
+            if crop.size == 0:
+                continue
+
+            crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+
+            with self._lock:
+                try:
+                    pose_result = self._pose.process(crop_rgb)
+                except Exception as e:
+                    logger.error(f"Pose estimation error for person {person.id}: {e}")
+                    continue
+
+            if pose_result.pose_landmarks is None:
+                continue
+
+            landmarks = []
+            keypoints = {}
+            crop_h, crop_w = crop.shape[:2]
+
+            for idx, lm in enumerate(pose_result.pose_landmarks.landmark):
+                abs_x = lm.x * crop_w + cx1
+                abs_y = lm.y * crop_h + cy1
+
+                norm_x = abs_x / w
+                norm_y = abs_y / h
+
+                landmark_data = {
+                    "x": norm_x,
+                    "y": norm_y,
+                    "z": lm.z,
+                    "visibility": lm.visibility,
+                    "abs_x": abs_x,
+                    "abs_y": abs_y,
+                }
+                landmarks.append(landmark_data)
+
+                if idx < len(KEYPOINT_NAMES):
+                    name = KEYPOINT_NAMES[idx]
+                    keypoints[name] = landmark_data
+
+            avg_vis = np.mean([lm["visibility"] for lm in landmarks])
+
+            results.append(PoseResult(
+                person_id=person.id,
                 landmarks=landmarks,
-                world_landmarks=world_landmarks,
-                bbox=(x1, y1, x2, y2)
-            )
+                keypoints=keypoints,
+                bbox=person.bbox,
+                confidence=float(avg_vis),
+            ))
 
-        except Exception as exc:
-            logger.error("Pose estimation error for person {}: {}", person_id, exc)
-            return None
+        return results
 
-    def draw_pose(self, frame: np.ndarray, pose: PersonPose, 
-                  color: tuple = (0, 255, 255)) -> np.ndarray:
-        """Render skeleton onto the frame."""
-        annotated = frame.copy()
-        
-        # Define skeleton connections
-        connections = [
-            ("left_shoulder", "right_shoulder"),
-            ("left_shoulder", "left_elbow"), ("left_elbow", "left_wrist"),
-            ("right_shoulder", "right_elbow"), ("right_elbow", "right_wrist"),
-            ("left_shoulder", "left_hip"), ("right_shoulder", "right_hip"),
-            ("left_hip", "right_hip"),
-            ("left_hip", "left_knee"), ("left_knee", "left_ankle"),
-            ("right_hip", "right_knee"), ("right_knee", "right_ankle")
+    def draw_skeleton(self, frame: np.ndarray, pose_results: list[PoseResult]) -> np.ndarray:
+        """
+        Draw skeleton lines and keypoint dots on the frame.
+
+        Args:
+            frame: BGR image to draw on
+            pose_results: List of PoseResult objects
+
+        Returns:
+            Annotated frame
+        """
+        colors = [
+            (0, 255, 255), (255, 0, 255), (255, 255, 0),
+            (0, 255, 0), (255, 128, 0), (128, 0, 255),
         ]
 
-        # Draw landmarks
-        for name, lm in pose.landmarks.items():
-            if lm.visibility > 0.5:
-                cv2.circle(annotated, (int(lm.x), int(lm.y)), 4, color, -1)
+        for pose in pose_results:
+            color = colors[pose.person_id % len(colors)]
 
-        # Draw connections
-        for start_name, end_name in connections:
-            if start_name in pose.landmarks and end_name in pose.landmarks:
-                s = pose.landmarks[start_name]
-                e = pose.landmarks[end_name]
-                if s.visibility > 0.5 and e.visibility > 0.5:
-                    cv2.line(annotated, (int(s.x), int(s.y)), (int(e.x), int(e.y)), color, 2)
+            for start_idx, end_idx in SKELETON_CONNECTIONS:
+                if start_idx >= len(pose.landmarks) or end_idx >= len(pose.landmarks):
+                    continue
+                lm1 = pose.landmarks[start_idx]
+                lm2 = pose.landmarks[end_idx]
 
-        return annotated
+                if lm1["visibility"] < 0.5 or lm2["visibility"] < 0.5:
+                    continue
 
-    def close(self) -> None:
-        if self._pose_engine:
-            self._pose_engine.close()
-            logger.info("Pose Estimator closed")
+                pt1 = (int(lm1["abs_x"]), int(lm1["abs_y"]))
+                pt2 = (int(lm2["abs_x"]), int(lm2["abs_y"]))
+                cv2.line(frame, pt1, pt2, color, 2, cv2.LINE_AA)
+
+            for lm in pose.landmarks:
+                if lm["visibility"] < 0.5:
+                    continue
+                pt = (int(lm["abs_x"]), int(lm["abs_y"]))
+                cv2.circle(frame, pt, 3, color, -1, cv2.LINE_AA)
+
+        return frame
+
+    @staticmethod
+    def get_body_angle(pose: PoseResult, joint1: str, joint2: str, joint3: str) -> Optional[float]:
+        """
+        Calculate the angle at joint2 formed by joint1-joint2-joint3.
+
+        Args:
+            pose: PoseResult object
+            joint1: Name of first joint
+            joint2: Name of vertex joint
+            joint3: Name of third joint
+
+        Returns:
+            Angle in degrees, or None if any joint has low visibility
+        """
+        kp1 = pose.get_landmark(joint1)
+        kp2 = pose.get_landmark(joint2)
+        kp3 = pose.get_landmark(joint3)
+
+        if any(kp is None for kp in [kp1, kp2, kp3]):
+            return None
+
+        v1 = np.array([kp1["x"] - kp2["x"], kp1["y"] - kp2["y"]])
+        v2 = np.array([kp3["x"] - kp2["x"], kp3["y"] - kp2["y"]])
+
+        cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2) + 1e-6)
+        cos_angle = np.clip(cos_angle, -1.0, 1.0)
+        angle = np.degrees(np.arccos(cos_angle))
+        return float(angle)
+
+    @staticmethod
+    def get_joint_velocity(
+        pose: PoseResult, joint: str, previous_pose: Optional[PoseResult]
+    ) -> Optional[float]:
+        """
+        Calculate the velocity of a joint between two consecutive pose estimations.
+
+        Args:
+            pose: Current pose
+            joint: Joint name
+            previous_pose: Previous pose for same person
+
+        Returns:
+            Velocity in normalized coordinate units per frame, or None
+        """
+        if previous_pose is None:
+            return None
+
+        curr = pose.get_landmark(joint)
+        prev = previous_pose.get_landmark(joint)
+
+        if curr is None or prev is None:
+            return None
+
+        dx = curr["x"] - prev["x"]
+        dy = curr["y"] - prev["y"]
+        return float(np.sqrt(dx**2 + dy**2))
+
+    def close(self):
+        """Release MediaPipe resources."""
+        if self._pose is not None:
+            self._pose.close()
+            self._pose = None
+            logger.info("PoseEstimator closed")

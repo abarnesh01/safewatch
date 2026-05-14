@@ -1,145 +1,277 @@
 """
-SafeWatch Optical Flow
-Lucas-Kanade based motion intelligence and divergence analysis.
+SafeWatch — OpticalFlowAnalyzer
+Lucas-Kanade optical flow for motion analysis and crowd divergence detection.
 """
+
+import threading
+from dataclasses import dataclass
+from typing import Optional
 
 import cv2
 import numpy as np
-from typing import Optional, List, Tuple
-from dataclasses import dataclass
-
 from loguru import logger
 
 
 @dataclass
-class FlowStats:
-    """Statistical summary of optical flow in a frame or region."""
-    mean_magnitude: float = 0.0
-    max_magnitude: float = 0.0
-    divergence: float = 0.0
-    dominant_direction: float = 0.0  # In degrees
-    active_points: int = 0
+class FlowResult:
+    """Contains optical flow analysis results."""
+    mean_magnitude: float
+    max_magnitude: float
+    flow_vectors: list[tuple]
+    divergence_score: float
+    motion_regions: list[tuple]
+
+    def __repr__(self) -> str:
+        return (
+            f"FlowResult(mean_mag={self.mean_magnitude:.2f}, "
+            f"max_mag={self.max_magnitude:.2f}, "
+            f"divergence={self.divergence_score:.2f}, "
+            f"regions={len(self.motion_regions)})"
+        )
 
 
 class OpticalFlowAnalyzer:
-    """Analyzes motion patterns using dense and sparse optical flow."""
+    """
+    Lucas-Kanade optical flow analyzer for detecting motion patterns,
+    sudden movements, and crowd divergence.
+    """
 
-    def __init__(self, win_size: int = 15, max_level: int = 2,
-                 max_corners: int = 200, quality_level: float = 0.01,
-                 min_distance: int = 10) -> None:
-        self._win_size = win_size
-        self._max_level = max_level
+    def __init__(self, config: dict):
+        self._config = config.get("detection", {})
+        self._enabled = self._config.get("enable_optical_flow", True)
+        self._lock = threading.Lock()
+
         self._lk_params = dict(
-            winSize=(win_size, win_size),
-            maxLevel=max_level,
-            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)
+            winSize=(15, 15),
+            maxLevel=2,
+            criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
         )
+
         self._feature_params = dict(
-            maxCorners=max_corners,
-            qualityLevel=quality_level,
-            minDistance=min_distance,
-            blockSize=7
+            maxCorners=200,
+            qualityLevel=0.01,
+            minDistance=10,
+            blockSize=7,
         )
-        
+
         self._prev_gray: Optional[np.ndarray] = None
-        self._prev_pts: Optional[np.ndarray] = None
+        self._prev_points: Optional[np.ndarray] = None
         self._frame_count = 0
-        logger.info("OpticalFlowAnalyzer initialized (win_size={})", win_size)
+        self._reset_interval = 30
+        self._sudden_motion_threshold = 15.0
 
-    def analyze(self, frame: np.ndarray, 
-                mask: Optional[np.ndarray] = None) -> Optional[FlowStats]:
-        """Compute flow statistics between current and previous frame."""
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        if self._prev_gray is None:
-            self._prev_gray = gray
-            self._prev_pts = cv2.goodFeaturesToTrack(gray, mask=mask, **self._feature_params)
-            return None
+        logger.info(f"OpticalFlowAnalyzer initialized (enabled={self._enabled})")
 
-        if self._prev_pts is None or len(self._prev_pts) < 10:
-            self._prev_pts = cv2.goodFeaturesToTrack(gray, mask=mask, **self._feature_params)
-            self._prev_gray = gray
-            return None
-
-        try:
-            # Calculate sparse optical flow
-            curr_pts, status, error = cv2.calcOpticalFlowPyrLK(
-                self._prev_gray, gray, self._prev_pts, None, **self._lk_params
-            )
-
-            if curr_pts is None:
-                return None
-
-            # Filter valid points
-            good_new = curr_pts[status == 1]
-            good_old = self._prev_pts[status == 1]
-
-            if len(good_new) < 5:
-                self._prev_pts = cv2.goodFeaturesToTrack(gray, mask=mask, **self._feature_params)
-                self._prev_gray = gray
-                return None
-
-            # Calculate vectors
-            vectors = good_new - good_old
-            magnitudes = np.sqrt(np.sum(vectors**2, axis=1))
-            angles = np.arctan2(vectors[:, 1], vectors[:, 0]) * 180 / np.pi
-
-            # Divergence (simplified as standard deviation of direction)
-            divergence = float(np.std(angles)) if len(angles) > 1 else 0.0
-            
-            stats = FlowStats(
-                mean_magnitude=float(np.mean(magnitudes)),
-                max_magnitude=float(np.max(magnitudes)),
-                divergence=divergence,
-                dominant_direction=float(np.median(angles)),
-                active_points=len(good_new)
-            )
-
-            # Update for next frame
-            if self._frame_count % 10 == 0:
-                # Refresh features periodically
-                self._prev_pts = cv2.goodFeaturesToTrack(gray, mask=mask, **self._feature_params)
-            else:
-                self._prev_pts = good_new.reshape(-1, 1, 2)
-            
-            self._prev_gray = gray
-            self._frame_count += 1
-            
-            return stats
-
-        except Exception as exc:
-            logger.error("Optical flow calculation failed: {}", exc)
-            self._prev_gray = None
-            return None
-
-    def draw_flow(self, frame: np.ndarray, stats: FlowStats) -> np.ndarray:
-        """Visualize flow direction and intensity."""
-        annotated = frame.copy()
-        h, w = frame.shape[:2]
-        
-        # Draw motion indicator
-        center = (w - 60, 60)
-        cv2.circle(annotated, center, 40, (50, 50, 50), -1)
-        
-        # Arrow indicating dominant direction
-        angle_rad = stats.dominant_direction * np.pi / 180
-        length = min(stats.mean_magnitude * 5, 35)
-        end_pt = (
-            int(center[0] + length * np.cos(angle_rad)),
-            int(center[1] + length * np.sin(angle_rad))
+    def __repr__(self) -> str:
+        has_prev = self._prev_gray is not None
+        return (
+            f"OpticalFlowAnalyzer(enabled={self._enabled}, "
+            f"has_previous={has_prev}, frame_count={self._frame_count})"
         )
-        
-        cv2.arrowedLine(annotated, center, end_pt, (0, 255, 0), 2, tipLength=0.3)
-        
-        # Text summary
-        text = f"Flow: {stats.mean_magnitude:.1f} Div: {stats.divergence:.1f}"
-        cv2.putText(annotated, text, (10, h - 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
-        
-        return annotated
 
-    def reset(self) -> None:
-        self._prev_gray = None
-        self._prev_pts = None
-        self._frame_count = 0
-        logger.debug("OpticalFlowAnalyzer reset")
+    def _detect_features(self, gray: np.ndarray) -> Optional[np.ndarray]:
+        """Detect good features to track in the grayscale frame."""
+        points = cv2.goodFeaturesToTrack(gray, **self._feature_params)
+        return points
+
+    def analyze(self, prev_frame: np.ndarray, curr_frame: np.ndarray) -> FlowResult:
+        """
+        Analyze optical flow between two consecutive frames.
+
+        Args:
+            prev_frame: Previous BGR frame
+            curr_frame: Current BGR frame
+
+        Returns:
+            FlowResult with motion analysis data
+        """
+        if not self._enabled:
+            return FlowResult(
+                mean_magnitude=0.0,
+                max_magnitude=0.0,
+                flow_vectors=[],
+                divergence_score=0.0,
+                motion_regions=[],
+            )
+
+        with self._lock:
+            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+
+            self._frame_count += 1
+
+            if self._prev_points is None or self._frame_count % self._reset_interval == 0:
+                self._prev_points = self._detect_features(prev_gray)
+                self._prev_gray = prev_gray
+
+            if self._prev_points is None or len(self._prev_points) < 5:
+                self._prev_points = self._detect_features(prev_gray)
+                self._prev_gray = prev_gray
+                if self._prev_points is None or len(self._prev_points) < 5:
+                    return FlowResult(
+                        mean_magnitude=0.0,
+                        max_magnitude=0.0,
+                        flow_vectors=[],
+                        divergence_score=0.0,
+                        motion_regions=[],
+                    )
+
+            try:
+                next_points, status, errors = cv2.calcOpticalFlowPyrLK(
+                    self._prev_gray, curr_gray, self._prev_points, None, **self._lk_params
+                )
+            except Exception as e:
+                logger.error(f"Optical flow calculation error: {e}")
+                self._prev_gray = curr_gray
+                self._prev_points = self._detect_features(curr_gray)
+                return FlowResult(
+                    mean_magnitude=0.0,
+                    max_magnitude=0.0,
+                    flow_vectors=[],
+                    divergence_score=0.0,
+                    motion_regions=[],
+                )
+
+            if next_points is None or status is None:
+                self._prev_gray = curr_gray
+                self._prev_points = self._detect_features(curr_gray)
+                return FlowResult(
+                    mean_magnitude=0.0,
+                    max_magnitude=0.0,
+                    flow_vectors=[],
+                    divergence_score=0.0,
+                    motion_regions=[],
+                )
+
+            good_mask = status.flatten() == 1
+            good_prev = self._prev_points[good_mask]
+            good_next = next_points[good_mask]
+
+            if len(good_prev) == 0:
+                self._prev_gray = curr_gray
+                self._prev_points = self._detect_features(curr_gray)
+                return FlowResult(
+                    mean_magnitude=0.0,
+                    max_magnitude=0.0,
+                    flow_vectors=[],
+                    divergence_score=0.0,
+                    motion_regions=[],
+                )
+
+            displacements = good_next - good_prev
+            magnitudes = np.sqrt(displacements[:, 0, 0]**2 + displacements[:, 0, 1]**2)
+
+            mean_mag = float(np.mean(magnitudes))
+            max_mag = float(np.max(magnitudes))
+
+            flow_vectors = []
+            for i in range(len(good_prev)):
+                px, py = good_prev[i].ravel()
+                nx, ny = good_next[i].ravel()
+                flow_vectors.append((float(px), float(py), float(nx), float(ny), float(magnitudes[i])))
+
+            divergence_score = self._calculate_divergence(good_prev, good_next, displacements)
+
+            motion_regions = self._find_motion_regions(
+                curr_gray, displacements, good_next, magnitudes
+            )
+
+            self._prev_gray = curr_gray
+            self._prev_points = good_next.reshape(-1, 1, 2)
+
+            return FlowResult(
+                mean_magnitude=mean_mag,
+                max_magnitude=max_mag,
+                flow_vectors=flow_vectors,
+                divergence_score=divergence_score,
+                motion_regions=motion_regions,
+            )
+
+    def _calculate_divergence(
+        self,
+        prev_pts: np.ndarray,
+        next_pts: np.ndarray,
+        displacements: np.ndarray,
+    ) -> float:
+        """
+        Calculate flow divergence — high values indicate people moving in all directions
+        (panic-like behavior).
+        """
+        if len(displacements) < 3:
+            return 0.0
+
+        center = np.mean(prev_pts, axis=0).reshape(1, 2)
+        angles = np.arctan2(displacements[:, 0, 1], displacements[:, 0, 0])
+
+        angle_std = float(np.std(angles))
+        magnitudes = np.sqrt(displacements[:, 0, 0]**2 + displacements[:, 0, 1]**2)
+        mean_mag = float(np.mean(magnitudes))
+
+        divergence = angle_std * mean_mag
+        return divergence
+
+    def _find_motion_regions(
+        self,
+        gray: np.ndarray,
+        displacements: np.ndarray,
+        points: np.ndarray,
+        magnitudes: np.ndarray,
+    ) -> list[tuple]:
+        """Find rectangular regions with significant motion."""
+        regions = []
+        threshold = 5.0
+
+        high_motion_mask = magnitudes > threshold
+        high_motion_pts = points[high_motion_mask]
+
+        if len(high_motion_pts) < 2:
+            return regions
+
+        for i in range(0, len(high_motion_pts), 5):
+            chunk = high_motion_pts[i:i+5]
+            if len(chunk) < 2:
+                continue
+            xs = chunk[:, 0, 0]
+            ys = chunk[:, 0, 1]
+            x1 = int(np.min(xs)) - 10
+            y1 = int(np.min(ys)) - 10
+            x2 = int(np.max(xs)) + 10
+            y2 = int(np.max(ys)) + 10
+            regions.append((x1, y1, x2, y2))
+
+        return regions
+
+    def detect_sudden_motion(self, flow_result: FlowResult) -> tuple[bool, float]:
+        """
+        Detect if there is a sudden spike in motion.
+
+        Args:
+            flow_result: FlowResult from analyze()
+
+        Returns:
+            Tuple of (is_sudden, magnitude)
+        """
+        is_sudden = flow_result.max_magnitude > self._sudden_motion_threshold
+        return is_sudden, flow_result.max_magnitude
+
+    def detect_crowd_divergence(self, flow_result: FlowResult) -> tuple[bool, float]:
+        """
+        Detect crowd divergence pattern (people running in all directions).
+
+        Args:
+            flow_result: FlowResult from analyze()
+
+        Returns:
+            Tuple of (is_divergent, divergence_score)
+        """
+        threshold = self._config.get("crowd_panic", {}).get("flow_divergence_threshold", 8.0)
+        is_divergent = flow_result.divergence_score > threshold
+        return is_divergent, flow_result.divergence_score
+
+    def reset(self):
+        """Reset the analyzer state."""
+        with self._lock:
+            self._prev_gray = None
+            self._prev_points = None
+            self._frame_count = 0
+            logger.debug("OpticalFlowAnalyzer reset")
