@@ -5,7 +5,7 @@ Detects aggressive physical altercations between multiple persons.
 
 import numpy as np
 from typing import List, Dict, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from loguru import logger
