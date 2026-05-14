@@ -1,187 +1,136 @@
-# ============================================================
-# SafeWatch — Master Configuration
-# ============================================================
+# ============================================
+# SafeWatch — Configuration File
+# AI-Powered CCTV Threat Detection System
+# ============================================
 
 system:
   name: "SafeWatch"
   version: "1.0.0"
+  debug: false
   log_level: "INFO"
-  log_dir: "logs"
-  data_dir: "data"
-  max_workers: 4
-  graceful_shutdown_timeout: 10
+  log_file: "logs/safewatch.log"
 
 cameras:
-  - id: "cam_01"
+  - id: "CAM-01"
     name: "Main Entrance"
     source: 0
-    type: "usb"
     enabled: true
+    zone_type: "entrance"
+    agents: ["agent_main"]
+    resolution: [640, 480]
     fps_target: 15
-    resolution: [1280, 720]
-  # - id: "cam_02"
-  #   name: "Parking Lot"
-  #   source: "rtsp://admin:password@192.168.1.100:554/stream1"
-  #   type: "rtsp"
-  #   enabled: true
-  #   fps_target: 10
-  #   resolution: [1920, 1080]
+    frame_skip: 5
+    record_on_threat: true
+    recording_seconds_before: 5
+    recording_seconds_after: 10
 
-capture:
-  frame_queue_size: 128
-  reconnect_delay: 5
-  max_reconnect_attempts: 50
-  health_check_interval: 30
-  frame_timeout: 10
+  - id: "CAM-02"
+    name: "Parking Area"
+    source: "rtsp://192.168.1.100:554/stream1"
+    enabled: false
+    zone_type: "outdoor"
+    agents: ["agent_parking"]
+    resolution: [640, 480]
+    fps_target: 10
+    frame_skip: 8
+    record_on_threat: true
+    recording_seconds_before: 5
+    recording_seconds_after: 10
 
 detection:
-  yolo:
-    model_path: "models/yolov8n.pt"
-    confidence_threshold: 0.45
-    iou_threshold: 0.5
-    device: "cpu"
-    img_size: 640
-    person_class_id: 0
-    track_persist: true
-    tracker: "botsort.yaml"
-  pose:
-    model_complexity: 1
-    min_detection_confidence: 0.5
-    min_tracking_confidence: 0.5
-    enable_segmentation: false
-    smooth_landmarks: true
-  optical_flow:
-    win_size: 15
-    max_level: 3
-    max_corners: 200
-    quality_level: 0.01
-    min_distance: 10
-    flow_magnitude_threshold: 5.0
-    divergence_threshold: 0.3
-
-frame_sampler:
-  min_motion_threshold: 500
-  background_subtractor_history: 500
-  background_subtractor_threshold: 50
-  skip_frames_no_motion: 5
-  skip_frames_motion: 1
-
-zones:
-  enabled: false
-  restricted_zones: []
-  # - name: "Server Room"
-  #   camera_id: "cam_01"
-  #   polygon: [[100, 100], [400, 100], [400, 400], [100, 400]]
-  #   schedule:
-  #     start: "22:00"
-  #     end: "06:00"
+  yolo_model: "models/yolov8n.pt"
+  yolo_confidence: 0.5
+  yolo_classes: [0]
+  pose_model_complexity: 0
+  pose_min_confidence: 0.5
+  max_persons_tracked: 10
+  enable_optical_flow: true
 
 threats:
   fight:
     enabled: true
-    proximity_threshold: 150
-    arm_raise_angle: 120
-    strike_velocity_threshold: 15.0
-    aggression_score_threshold: 0.6
+    confidence_threshold: 0.82
     min_persons: 2
-    cooldown: 30
+    velocity_threshold: 45.0
+    overlap_threshold: 0.3
   fall:
     enabled: true
-    hip_drop_threshold: 0.3
-    horizontal_ratio: 1.5
-    impact_velocity_threshold: 10.0
-    stillness_duration: 3.0
-    cooldown: 45
+    confidence_threshold: 0.78
+    hip_drop_threshold: 80
+    stillness_frames: 30
   harassment:
     enabled: true
-    proximity_duration: 10.0
-    proximity_distance: 200
-    circling_threshold: 0.4
-    asymmetry_threshold: 0.5
-    cooldown: 60
+    confidence_threshold: 0.75
+    proximity_threshold: 0.15
+    duration_frames: 60
   assault:
     enabled: true
-    strike_velocity_threshold: 18.0
-    evasion_threshold: 8.0
-    repeated_impact_count: 3
-    cooldown: 30
+    confidence_threshold: 0.85
+    strike_velocity_threshold: 60.0
   unconscious:
     enabled: true
-    horizontal_duration: 15.0
-    motion_threshold: 1.0
-    head_ground_threshold: 0.15
-    cooldown: 120
+    confidence_threshold: 0.80
+    horizontal_angle_threshold: 25
+    stillness_frames: 90
   trespass:
     enabled: true
-    cooldown: 60
+    confidence_threshold: 0.95
+    zones: []
   crowd_panic:
     enabled: true
+    confidence_threshold: 0.72
+    flow_divergence_threshold: 8.0
     min_persons: 5
-    flow_divergence_threshold: 0.5
-    acceleration_threshold: 12.0
-    cooldown: 45
   accident:
     enabled: true
-    simultaneous_fall_count: 2
-    flow_spike_threshold: 20.0
-    cooldown: 30
+    confidence_threshold: 0.78
   abuse:
     enabled: true
-    repeated_strike_window: 60.0
-    repeated_strike_count: 5
-    dominance_threshold: 0.6
-    cooldown: 60
-
-risk_levels:
-  safe:
-    color: [0, 255, 0]
-    label: "SAFE"
-  low:
-    color: [0, 255, 255]
-    label: "LOW"
-  medium:
-    color: [0, 165, 255]
-    label: "MEDIUM"
-  high:
-    color: [0, 0, 255]
-    label: "HIGH"
-  critical:
-    color: [255, 0, 255]
-    label: "CRITICAL"
-
-alerts:
-  telegram:
+    confidence_threshold: 0.80
+  pass_away:
     enabled: true
-    bot_token: ""
-    chat_id: ""
-    alert_chat_id: ""
-    admin_chat_id: ""
-    rate_limit: 5
-    rate_limit_window: 60
-    retry_attempts: 3
-    retry_backoff_base: 2.0
-    daily_summary_hour: 8
-    daily_summary_minute: 0
-  snapshot:
-    width: 1280
-    height: 720
-    banner_height: 60
-    border_width: 4
-    watermark: "SafeWatch AI"
-    jpeg_quality: 85
-  cooldown:
-    default: 30
-    per_threat_type: true
+    confidence_threshold: 0.82
+    stillness_frames: 120
+
+telegram:
+  enabled: true
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  agents:
+    agent_main:
+      chat_id: "${TELEGRAM_CHAT_ID_MAIN}"
+      name: "Main Security Officer"
+      cameras: ["CAM-01"]
+    agent_parking:
+      chat_id: "${TELEGRAM_CHAT_ID_PARKING}"
+      name: "Parking Security"
+      cameras: ["CAM-02"]
+  alert_cooldown_seconds: 30
+  send_snapshot: true
+  send_video_clip: false
+  max_retries: 3
+
+recording:
+  enabled: true
+  output_dir: "recordings/"
+  format: "mp4"
+  codec: "mp4v"
+  max_file_size_mb: 500
+  retention_days: 7
 
 database:
-  path: "data/safewatch.db"
-  backup_interval: 86400
-  max_incidents: 100000
-  cleanup_days: 90
+  path: "logs/safewatch.db"
+  backup_interval_hours: 24
 
 dashboard:
   host: "0.0.0.0"
   port: 8501
-  theme: "dark"
-  refresh_interval: 2
-  max_live_feeds: 8
+  refresh_rate_ms: 500
+  show_skeleton: true
+  show_bboxes: true
+  show_zones: true
+  show_threat_overlay: true
+
+models:
+  action_classifier: "models/action_classifier.onnx"
+  custom_yolo: "models/custom_threat_yolo.pt"
+  use_custom_yolo: false
