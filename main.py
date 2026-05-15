@@ -251,6 +251,48 @@ def main_loop(config: dict):
                 # 1. Get frame
                 frame = stream_manager.get_frame(cam_id)
                 if frame is None:
+                    # Show "No Signal" placeholder on the monitor
+                    if show_display:
+                        res = config.get("cameras", [{}])[0].get("resolution", [640, 480])
+                        no_signal = np.zeros((res[1], res[0], 3), dtype=np.uint8)
+                        # Dark background with status text
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        h_ns, w_ns = no_signal.shape[:2]
+
+                        # SafeWatch branding
+                        cv2.putText(no_signal, "SAFEWATCH", (w_ns // 2 - 110, h_ns // 2 - 60),
+                                    font, 1.0, (0, 220, 255), 2, cv2.LINE_AA)
+
+                        # Camera status
+                        stream_obj = stream_manager.get_stream(cam_id)
+                        if stream_obj and stream_obj.is_connected():
+                            status_text = "Buffering..."
+                            status_color = (0, 255, 255)
+                        else:
+                            status_text = f"Waiting for {cam_id}..."
+                            status_color = (0, 100, 255)
+
+                        (tw, _), _ = cv2.getTextSize(status_text, font, 0.7, 2)
+                        cv2.putText(no_signal, status_text,
+                                    (w_ns // 2 - tw // 2, h_ns // 2),
+                                    font, 0.7, status_color, 2, cv2.LINE_AA)
+
+                        # Animated dots
+                        n_dots = int(time.time() * 2) % 4
+                        dots = "." * n_dots
+                        cv2.putText(no_signal, dots,
+                                    (w_ns // 2 + tw // 2, h_ns // 2),
+                                    font, 0.7, status_color, 2, cv2.LINE_AA)
+
+                        # Timestamp
+                        ts = time.strftime("%H:%M:%S")
+                        cv2.putText(no_signal, ts, (w_ns - 120, h_ns - 15),
+                                    font, 0.5, (100, 100, 100), 1, cv2.LINE_AA)
+
+                        cv2.imshow("SafeWatch Monitor", no_signal)
+                        key = cv2.waitKey(100) & 0xFF
+                        if key == ord('q'):
+                            running = False
                     continue
 
                 frame_counters[cam_id] += 1
