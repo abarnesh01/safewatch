@@ -73,7 +73,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "⚙️ System Settings"],
+        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
         label_visibility="collapsed",
     )
 
@@ -577,3 +577,66 @@ elif page == "🧩 SOC Mosaic":
     # Refresh
     time.sleep(1.0)
     st.rerun()
+
+# ─── PAGE 7: Dev Diagnostics ────────────────────────────────────
+elif page == "🛠️ Dev Diagnostics":
+    st.markdown('<div class="header-banner"><h1>🛠️ Dev Diagnostics</h1></div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 🧬 Repository Health")
+        import subprocess
+        try:
+            branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"]).decode().strip()
+            st.info(f"**Current Branch:** `{branch}`")
+            
+            status = subprocess.check_output(["git", "status", "--short"]).decode().strip()
+            if status:
+                st.warning("⚠️ **Uncommitted Changes Detected**")
+                st.code(status)
+            else:
+                st.success("✅ **Worktree is Clean**")
+                
+            last_commit = subprocess.check_output(["git", "log", "-1", "--format=%s (%cr)"]).decode().strip()
+            st.markdown(f"**Last Sync:** {last_commit}")
+        except Exception as e:
+            st.error(f"Git diagnostics failed: {e}")
+
+    with col2:
+        st.markdown("### 📂 Runtime Isolation")
+        for name, path in [
+            ("Cache", RuntimePath.CACHE),
+            ("Telemetry", RuntimePath.TELEMETRY),
+            ("Snapshots", RuntimePath.SNAPSHOTS),
+            ("Logs", RuntimePath.LOGS),
+            ("Exports", RuntimePath.EXPORTS)
+        ]:
+            if path.exists():
+                count = len(list(path.glob("*")))
+                size = sum(f.stat().st_size for f in path.glob("*") if f.is_file()) / (1024 * 1024)
+                st.markdown(f"- **{name}:** {count} files ({size:.2f} MB)")
+            else:
+                st.error(f"- **{name}:** Path missing!")
+
+    st.markdown("---")
+    st.markdown("### 🧠 AI Pipeline Latency")
+    if "threat_engine" in st.session_state:
+        te = st.session_state["threat_engine"]
+        if hasattr(te, "_profiler"):
+            import pandas as pd
+            profiler_data = []
+            for name, latencies in te._profiler.items():
+                if latencies:
+                    profiler_data.append({"Detector": name, "Avg Latency (ms)": sum(latencies)/len(latencies)})
+            
+            if profiler_data:
+                df = pd.DataFrame(profiler_data)
+                st.bar_chart(df.set_index("Detector"))
+            else:
+                st.info("Waiting for pipeline profile data...")
+        else:
+            st.warning("Profiler not active in current engine.")
+
+    if st.button("🧹 Force Stale Cache Cleanup"):
+        st.success("Manual cleanup triggered.")
