@@ -1,138 +1,47 @@
-# ============================================
-# SafeWatch — Configuration File
-# AI-Powered CCTV Threat Detection System
-# ============================================
-
 system:
-  name: "SafeWatch"
+  name: "SafeWatch Enterprise"
   version: "1.0.0"
-  debug: false
-  log_level: "INFO"
-  log_file: "logs/safewatch.log"
+  log_level: "DEBUG"
+  device: "cpu" # Options: cpu, cuda
+  save_recordings: true
+  recording_path: "recordings"
 
 cameras:
-  - id: "CAM-01"
-    name: "Main Entrance"
-    # DroidCam: Replace the IP below with your phone's IP from the DroidCam app
-    # For built-in webcam, change back to: source: 0
-    source: "http://100.115.50.164:4747/video"
+  - id: "cam_01"
+    name: "Front Entrance"
+    source: 0 # USB Camera or RTSP URL
+    fps_limit: 15
     enabled: true
-    zone_type: "entrance"
-    agents: ["agent_main"]
-    resolution: [640, 480]
-    fps_target: 30
-    frame_skip: 3
-    record_on_threat: true
-    recording_seconds_before: 5
-    recording_seconds_after: 10
-
-  - id: "CAM-02"
-    name: "Parking Area"
-    source: "rtsp://192.168.1.100:554/stream1"
-    enabled: false
-    zone_type: "outdoor"
-    agents: ["agent_parking"]
-    resolution: [640, 480]
-    fps_target: 10
-    frame_skip: 8
-    record_on_threat: true
-    recording_seconds_before: 5
-    recording_seconds_after: 10
+    zones:
+      - name: "Entry Zone"
+        points: [[0, 0], [1, 0], [1, 1], [0, 1]] # Normalized coordinates
 
 detection:
-  yolo_model: "models/yolov8n.pt"
-  yolo_confidence: 0.5
-  yolo_classes: [0]
-  pose_model_complexity: 0
-  pose_min_confidence: 0.5
-  max_persons_tracked: 10
-  enable_optical_flow: true
+  person_conf: 0.5
+  iou_threshold: 0.45
+  model_type: "yolov8n.pt" # Auto-downloads on first run
+
+pose:
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
 
 threats:
-  fight:
-    enabled: true
-    confidence_threshold: 0.82
-    min_persons: 2
-    velocity_threshold: 45.0
-    overlap_threshold: 0.3
-  fall:
-    enabled: true
-    confidence_threshold: 0.78
-    hip_drop_threshold: 80
-    stillness_frames: 30
-  harassment:
-    enabled: true
-    confidence_threshold: 0.75
-    proximity_threshold: 0.15
-    duration_frames: 60
-  assault:
-    enabled: true
-    confidence_threshold: 0.85
-    strike_velocity_threshold: 60.0
-  unconscious:
-    enabled: true
-    confidence_threshold: 0.80
-    horizontal_angle_threshold: 25
-    stillness_frames: 90
-  trespass:
-    enabled: true
-    confidence_threshold: 0.95
-    zones: []
-  crowd_panic:
-    enabled: true
-    confidence_threshold: 0.72
-    flow_divergence_threshold: 8.0
-    min_persons: 5
-  accident:
-    enabled: true
-    confidence_threshold: 0.78
-  abuse:
-    enabled: true
-    confidence_threshold: 0.80
-  pass_away:
-    enabled: true
-    confidence_threshold: 0.82
-    stillness_frames: 120
+  cooldown_seconds: 30
+  thresholds:
+    fight: 0.75
+    fall: 0.8
+    trespass: 0.9
+    crowd_panic: 0.7
+    accident: 0.8
+    assault: 0.85
+    harassment: 0.7
+    unconscious: 0.9
 
-telegram:
-  enabled: true
-  bot_token: "${TELEGRAM_BOT_TOKEN}"
-  agents:
-    agent_main:
-      chat_id: "${TELEGRAM_CHAT_ID_MAIN}"
-      name: "Main Security Officer"
-      cameras: ["CAM-01"]
-    agent_parking:
-      chat_id: "${TELEGRAM_CHAT_ID_PARKING}"
-      name: "Parking Security"
-      cameras: ["CAM-02"]
-  alert_cooldown_seconds: 30
-  send_snapshot: true
-  send_video_clip: false
-  max_retries: 3
-
-recording:
-  enabled: true
-  output_dir: "recordings/"
-  format: "mp4"
-  codec: "mp4v"
-  max_file_size_mb: 500
-  retention_days: 7
+alerts:
+  telegram_enabled: true
+  snapshot_enabled: true
+  min_severity: "MEDIUM"
 
 database:
   path: "logs/safewatch.db"
-  backup_interval_hours: 24
-
-dashboard:
-  host: "0.0.0.0"
-  port: 8501
-  refresh_rate_ms: 500
-  show_skeleton: true
-  show_bboxes: true
-  show_zones: true
-  show_threat_overlay: true
-
-models:
-  action_classifier: "models/action_classifier.onnx"
-  custom_yolo: "models/custom_threat_yolo.pt"
-  use_custom_yolo: false
+  backup_interval: 86400
