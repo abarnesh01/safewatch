@@ -6,6 +6,7 @@ Manages multiple camera streams with health monitoring and auto-restart.
 import time
 import threading
 from typing import Optional
+from collections import defaultdict
 
 import numpy as np
 from loguru import logger
@@ -143,30 +144,56 @@ class StreamManager:
         return status
 
     def _health_monitor_loop(self):
-        """Periodically check and log camera health, restart failed streams."""
-        logger.info("Health monitor started")
+        """Advanced health monitor: scores, frozen detection, and auto-restart."""
+        logger.info("Advanced Health Monitor active")
+        
+        # Track last frame hashes for frozen detection
+        last_hashes = defaultdict(list)
+        uptime_stats = defaultdict(float)
+        
         while self._running:
             time.sleep(self._health_interval)
-            if not self._running:
-                break
+            if not self._running: break
 
             with self._lock:
                 for cam_id, stream in self._streams.items():
                     status = stream.get_status()
-                    if status["running"] and not status["connected"]:
-                        logger.warning(
-                            f"[{cam_id}] Camera disconnected, auto-restarting..."
-                        )
+                    score = 100
+                    
+                    # 1. Connectivity & FPS Check
+                    if not status["connected"]:
+                        score -= 50
+                    elif status["fps"] < (stream.fps_target * 0.7):
+                        score -= 20
+                    
+                    # 2. Frozen Frame Detection
+                    frame = stream.read()
+                    if frame is not None:
+                        # Simple hash for frozen check
+                        h = hash(frame.tobytes())
+                        last_hashes[cam_id].append(h)
+                        if len(last_hashes[cam_id]) > 5:
+                            last_hashes[cam_id].pop(0)
+                        
+                        if len(last_hashes[cam_id]) == 5 and len(set(last_hashes[cam_id])) == 1:
+                            logger.warning(f"[{cam_id}] Stream frozen detected!")
+                            score -= 60
+                    
+                    # 3. Buffer Health
+                    if status["buffer_size"] > 10:
+                        score -= 10
+
+                    # 4. Auto-Recovery Logic
+                    if score < 40:
+                        logger.error(f"[{cam_id}] Critical failure (Score: {score}). Auto-recovering...")
                         stream.stop()
-                        time.sleep(1.0)
+                        time.sleep(2.0)
                         stream.start()
-                    elif status["connected"]:
-                        logger.debug(
-                            f"[{cam_id}] Health OK — fps={status['fps']:.1f}, "
-                            f"buffer={status['buffer_size']}"
-                        )
-                    else:
-                        logger.debug(f"[{cam_id}] Camera is stopped")
+                        score = 50 # Partial reset after recovery
+                    
+                    # Store score (this would normally go to DB)
+                    status["health_score"] = max(0, score)
+                    logger.debug(f"[{cam_id}] Health Score: {status['health_score']}%")
 
         logger.info("Health monitor stopped")
 
