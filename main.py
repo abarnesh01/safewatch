@@ -169,6 +169,15 @@ class SafeWatchApp:
         finally:
             self.shutdown()
 
+    def _update_telemetry(self, cam_id: str, latency: float):
+        """Update system telemetry and share with dashboard."""
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        
+        # In a production system, this would be pushed to a shared state or DB
+        # For this build, we use a simple singleton or log-based approach
+        logger.debug(f"Telemetry [{cam_id}]: Latency={latency:.1f}ms CPU={cpu}% RAM={ram}%")
+
     def shutdown(self) -> None:
         logger.info("Shutting down SafeWatch...")
         self._running = False
