@@ -150,10 +150,15 @@ class ThreatEngine:
         # Collect results, especially fall events for cross-detector use
         fall_events = []
         detector_results: dict[str, list] = {}
+        
+        global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
 
         for name, future in futures.items():
             try:
                 result = future.result(timeout=2.0)
+                # Apply global confidence filter
+                result = [t for t in result if t.confidence >= global_min_conf]
+                
                 detector_results[name] = result
                 if name == "fall":
                     fall_events = result
@@ -168,6 +173,7 @@ class ThreatEngine:
                 panic_events = self._crowd_panic_detector.detect(
                     persons, flow_result, velocity_tracker, fall_events
                 )
+                panic_events = [t for t in panic_events if t.confidence >= global_min_conf]
                 all_threats.extend(panic_events)
             except Exception as e:
                 logger.error(f"CrowdPanicDetector failed: {e}")
@@ -177,6 +183,7 @@ class ThreatEngine:
                 accident_events = self._accident_detector.detect(
                     persons, poses, flow_result, velocity_tracker, fall_events
                 )
+                accident_events = [t for t in accident_events if t.confidence >= global_min_conf]
                 all_threats.extend(accident_events)
             except Exception as e:
                 logger.error(f"AccidentDetector failed: {e}")
