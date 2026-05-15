@@ -99,6 +99,34 @@ class SafeWatchApp:
         log_dir = Path(self._config["system"]["log_dir"])
         log_dir.mkdir(exist_ok=True)
         logger.add(log_dir / "safewatch.log", rotation="10 MB", level="INFO")
+        
+        # Validate Git Worktree
+        self._validate_worktree()
+
+    def _validate_worktree(self) -> None:
+        """Validate repository hygiene and detect accidental tracking of runtime artifacts."""
+        import subprocess
+        try:
+            # Check for dirty worktree (uncommitted changes)
+            status = subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True, text=True, check=False, cwd=str(Path(__file__).parent)
+            )
+            if status.stdout.strip():
+                logger.warning("Repository worktree is DIRTY. Please commit or stash changes before running production.")
+                
+            # Check for accidental tracking of runtime directories
+            # (If these are in git ls-files, they were added by mistake)
+            tracked = subprocess.run(
+                ["git", "ls-files", "logs/", "snapshots/", "recordings/", "exports/"],
+                capture_output=True, text=True, check=False, cwd=str(Path(__file__).parent)
+            )
+            if tracked.stdout.strip():
+                logger.error("DETECTION FAILURE: Runtime artifacts are being tracked by Git!")
+                logger.error("Fix: Run 'git rm -r --cached <dir>' and update .gitignore")
+                
+        except Exception as e:
+            logger.debug(f"Git validation skipped: {e}")
 
     async def run(self) -> None:
         """Main processing loop."""
