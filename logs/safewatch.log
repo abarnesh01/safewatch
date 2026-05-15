@@ -25,3 +25,25 @@
 2026-05-15 00:16:15 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
 2026-05-15 00:16:19 | INFO    | person_detector:_load_model:63 — YOLOv8 model loaded from models/yolov8n.pt
 2026-05-15 00:16:19 | INFO    | main:main_loop:187 — ✅ Person detector loaded
+2026-05-15 17:33:55 | INFO    | main:main:368 — SafeWatch v1.0.0
+2026-05-15 17:33:55 | INFO    | main:main:369 — Debug mode: False
+2026-05-15 17:33:55 | INFO    | main:main:370 — Python: 3.14.4 (main, Apr  8 2026, 17:48:49) [GCC 15.2.1 20260209]
+2026-05-15 17:33:55 | INFO    | main:main:371 — Config: config.yaml
+2026-05-15 17:33:57 | INFO    | main:main_loop:172 — Initializing SafeWatch components...
+2026-05-15 17:33:57 | INFO    | db_manager:__init__:24 — DatabaseManager initialized at logs/safewatch.db
+2026-05-15 17:33:57 | INFO    | incident_logger:__init__:22 — IncidentLogger initialized
+2026-05-15 17:33:57 | INFO    | main:main_loop:178 — ✅ Database initialized
+2026-05-15 17:33:57 | INFO    | camera_stream:__init__:47 — CameraStream created: id=CAM-01 source=0 name=Main Entrance
+2026-05-15 17:33:57 | INFO    | frame_sampler:__init__:40 — FrameSampler created for CAM-01: skip=5, resolution=(640, 480)
+2026-05-15 17:33:57 | INFO    | stream_manager:_init_streams:69 — Camera configured: CAM-01 (Main Entrance)
+2026-05-15 17:33:57 | INFO    | stream_manager:_init_streams:43 — Camera CAM-02 is disabled, skipping
+2026-05-15 17:33:57 | INFO    | stream_manager:__init__:32 — StreamManager initialized with 1 cameras
+2026-05-15 17:33:57 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:33:57 | INFO    | camera_stream:_capture_loop:95 — [CAM-01] Capture thread started
+2026-05-15 17:33:57 | INFO    | camera_stream:start:171 — [CAM-01] Camera stream started
+2026-05-15 17:33:57 | INFO    | stream_manager:start_all:77 — Started stream: CAM-01
+2026-05-15 17:33:57 | INFO    | stream_manager:_health_monitor_loop:147 — Health monitor started
+2026-05-15 17:33:57 | INFO    | stream_manager:start_all:85 — All camera streams started
+2026-05-15 17:33:57 | INFO    | main:main_loop:183 — ✅ Camera streams started
+2026-05-15 17:34:00 | INFO    | person_detector:_load_model:63 — YOLOv8 model loaded from models/yolov8n.pt
+2026-05-15 17:34:00 | INFO    | main:main_loop:187 — ✅ Person detector loaded
