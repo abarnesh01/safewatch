@@ -3,6 +3,7 @@ import threading
 from pathlib import Path
 from loguru import logger
 from datetime import datetime
+import time
 
 class DatabaseManager:
     _instance = None
@@ -22,11 +23,45 @@ class DatabaseManager:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
+        
+        # Analytics Cache
+        self._cache = {}
+        self._cache_lock = threading.Lock()
+        self._cache_ttl = 5.0 # 5 seconds for live analytics
+        
         self._initialize_db()
         self._initialized = True
-        logger.info(f"Database initialized at {self.db_path}")
+        logger.info(f"Database initialized at {self.db_path} with analytics caching")
+
+    def fetch_cached(self, query: str, params: tuple = (), ttl: float = None):
+        """Fetch from cache if available and not expired."""
+        now = time.time()
+        cache_key = (query, params)
+        
+        with self._cache_lock:
+            if cache_key in self._cache:
+                data, expiry = self._cache[cache_key]
+                if now < expiry:
+                    return data
+
+        # Cache miss or expired
+        results = self.fetch_all(query, params)
+        
+        with self._cache_lock:
+            self._cache[cache_key] = (results, now + (ttl or self._cache_ttl))
+            
+        return results
+
+    def invalidate_cache(self, query_pattern: str = None):
+        """Clear cache entries matching a pattern or all if None."""
+        with self._cache_lock:
+            if query_pattern is None:
+                self._cache.clear()
+            else:
+                self._cache = {k: v for k, v in self._cache.items() if query_pattern not in k[0]}
 
     def _get_connection(self):
+        # ...
         if not hasattr(self._local, "connection"):
             self._local.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
             self._local.connection.row_factory = sqlite3.Row
