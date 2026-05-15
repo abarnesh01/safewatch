@@ -173,3 +173,84 @@
 2026-05-15 17:41:29 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
 2026-05-15 17:41:29 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
 2026-05-15 17:41:35 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:41:58 | INFO    | main:main:368 — SafeWatch v1.0.0
+2026-05-15 17:41:58 | INFO    | main:main:369 — Debug mode: False
+2026-05-15 17:41:58 | INFO    | main:main:370 — Python: 3.14.4 (main, Apr  8 2026, 17:48:49) [GCC 15.2.1 20260209]
+2026-05-15 17:41:58 | INFO    | main:main:371 — Config: config.yaml
+2026-05-15 17:41:59 | INFO    | main:main_loop:172 — Initializing SafeWatch components...
+2026-05-15 17:41:59 | INFO    | db_manager:__init__:24 — DatabaseManager initialized at logs/safewatch.db
+2026-05-15 17:41:59 | INFO    | incident_logger:__init__:22 — IncidentLogger initialized
+2026-05-15 17:41:59 | INFO    | main:main_loop:178 — ✅ Database initialized
+2026-05-15 17:41:59 | INFO    | camera_stream:__init__:47 — CameraStream created: id=CAM-01 source=0 name=Main Entrance
+2026-05-15 17:41:59 | INFO    | frame_sampler:__init__:40 — FrameSampler created for CAM-01: skip=5, resolution=(640, 480)
+2026-05-15 17:41:59 | INFO    | stream_manager:_init_streams:69 — Camera configured: CAM-01 (Main Entrance)
+2026-05-15 17:41:59 | INFO    | stream_manager:_init_streams:43 — Camera CAM-02 is disabled, skipping
+2026-05-15 17:41:59 | INFO    | stream_manager:__init__:32 — StreamManager initialized with 1 cameras
+2026-05-15 17:41:59 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:41:59 | INFO    | camera_stream:_capture_loop:95 — [CAM-01] Capture thread started
+2026-05-15 17:41:59 | INFO    | camera_stream:start:171 — [CAM-01] Camera stream started
+2026-05-15 17:41:59 | INFO    | stream_manager:start_all:77 — Started stream: CAM-01
+2026-05-15 17:41:59 | INFO    | stream_manager:_health_monitor_loop:147 — Health monitor started
+2026-05-15 17:41:59 | INFO    | stream_manager:start_all:85 — All camera streams started
+2026-05-15 17:41:59 | INFO    | main:main_loop:183 — ✅ Camera streams started
+2026-05-15 17:42:01 | INFO    | person_detector:_load_model:63 — YOLOv8 model loaded from models/yolov8n.pt
+2026-05-15 17:42:01 | INFO    | main:main_loop:187 — ✅ Person detector loaded
+2026-05-15 17:42:01 | INFO    | pose_estimator:__init__:119 — PoseEstimator initialized (model=pose_landmarker_lite.task)
+2026-05-15 17:42:01 | INFO    | main:main_loop:191 — ✅ Pose estimator loaded
+2026-05-15 17:42:01 | INFO    | optical_flow:__init__:63 — OpticalFlowAnalyzer initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | main:main_loop:195 — ✅ Optical flow analyzer ready
+2026-05-15 17:42:01 | INFO    | zone_manager:__init__:30 — ZoneManager initialized with 0 zones
+2026-05-15 17:42:01 | INFO    | main:main_loop:199 — ✅ Zone manager loaded
+2026-05-15 17:42:01 | INFO    | velocity_tracker:__init__:29 — VelocityTracker initialized (history=60, timeout=5.0s)
+2026-05-15 17:42:01 | INFO    | main:main_loop:203 — ✅ Velocity tracker ready
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | WARNING | action_classifier:_load_model:65 — ONNX model not found at models/action_classifier.onnx — using rule-based fallback
+2026-05-15 17:42:01 | INFO    | main:main_loop:207 — ✅ Action classifier ready (ActionClassifier(mode=rule-based, buffer_size=30))
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | fight_detector:__init__:47 — FightDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | fall_detector:__init__:42 — FallDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | harassment_detector:__init__:38 — HarassmentDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | assault_detector:__init__:36 — AssaultDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | unconscious_detector:__init__:48 — UnconsciousDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | trespass_detector:__init__:32 — TrespassDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | crowd_panic_detector:__init__:30 — CrowdPanicDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | accident_detector:__init__:29 — AccidentDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:42:01 | INFO    | abuse_detector:__init__:41 — AbuseDetector initialized (enabled=True)
+2026-05-15 17:42:01 | INFO    | threat_engine:__init__:87 — ThreatEngine initialized with all detectors
+2026-05-15 17:42:01 | INFO    | main:main_loop:211 — ✅ Threat engine initialized
+2026-05-15 17:42:01 | INFO    | telegram_bot:__init__:50 — Telegram bot initialized
+2026-05-15 17:42:01 | INFO    | main:main_loop:215 — ✅ Telegram bot ready (SafeWatchTelegramBot(enabled=True, agents=['agent_main', 'agent_parking']))
+2026-05-15 17:42:01 | INFO    | snapshot_builder:__init__:27 — SnapshotBuilder initialized
+2026-05-15 17:42:01 | INFO    | alert_manager:_process_queue_loop:169 — Alert queue processor started
+2026-05-15 17:42:01 | INFO    | alert_manager:__init__:70 — AlertManager initialized
+2026-05-15 17:42:01 | INFO    | main:main_loop:219 — ✅ Alert manager ready
+2026-05-15 17:42:01 | INFO    | main:run_dashboard:145 — Starting dashboard at http://0.0.0.0:8501
+2026-05-15 17:42:01 | INFO    | main:main_loop:225 — ✅ Dashboard started
+2026-05-15 17:42:01 | INFO    | main:main_loop:229 — 🚀 SafeWatch is now running!
+2026-05-15 17:42:01 | INFO    | main:main_loop:230 — Press Ctrl+C to stop.
+2026-05-15 17:42:10 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
+2026-05-15 17:42:10 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:42:16 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:42:27 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
+2026-05-15 17:42:27 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:42:32 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:42:43 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
+2026-05-15 17:42:43 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:42:49 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:43:00 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
+2026-05-15 17:43:00 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:43:02 | INFO    | main:signal_handler:237 — Shutdown signal received...
+2026-05-15 17:43:02 | INFO    | main:main_loop:322 — Shutting down SafeWatch...
+2026-05-15 17:43:04 | INFO    | main:signal_handler:237 — Shutdown signal received...
+2026-05-15 17:43:05 | INFO    | main:signal_handler:237 — Shutdown signal received...
+2026-05-15 17:43:05 | INFO    | main:signal_handler:237 — Shutdown signal received...
+2026-05-15 17:43:05 | INFO    | main:signal_handler:237 — Shutdown signal received...
+2026-05-15 17:43:05 | INFO    | camera_stream:_capture_loop:153 — [CAM-01] Capture thread stopped
+2026-05-15 17:43:05 | INFO    | camera_stream:stop:195 — [CAM-01] Camera stream stopped
+2026-05-15 17:43:05 | INFO    | stream_manager:stop_all:93 — Stopped stream: CAM-01
+2026-05-15 17:43:05 | INFO    | main:signal_handler:237 — Shutdown signal received...
