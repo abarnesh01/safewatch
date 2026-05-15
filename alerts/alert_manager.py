@@ -67,7 +67,11 @@ class AlertManager:
         )
         self._process_thread.start()
 
-        logger.info("AlertManager initialized")
+        # Deduplication state
+        self._recent_events: deque = deque(maxlen=20)
+        self._dedup_window = telegram_config.get("deduplication_window", 5.0)
+
+        logger.info("AlertManager initialized with deduplication engine")
 
     def __repr__(self) -> str:
         return (
@@ -77,11 +81,7 @@ class AlertManager:
 
     def process_threat_report(self, threat_report: ThreatReport, frame=None):
         """
-        Process a threat report from ThreatEngine.
-
-        Args:
-            threat_report: ThreatReport with detected threats
-            frame: Original frame for snapshot building
+        Process a threat report with spatial/temporal deduplication.
         """
         if not threat_report.threats_detected:
             return
@@ -90,15 +90,23 @@ class AlertManager:
         camera_name = self._camera_names.get(camera_id, camera_id)
 
         for threat in threat_report.threats_detected:
-            # Check cooldown
+            # 1. Cooldown & Deduplication check
+            if self._is_duplicate(threat, camera_id):
+                continue
+
+            # 2. Multi-camera correlation
+            correlation_data = self._correlate_incident(threat, camera_id)
+            if correlation_data:
+                logger.info(f"Correlated {threat.threat_type} on {camera_id} with existing incident {correlation_data['incident_id']}")
+                # We still might want to send a secondary alert or just log it
+            
+            # (Rest of the alert building logic remains similar but optimized)
+            # ...
             cooldown_key = f"{camera_id}:{threat.threat_type}"
             with self._lock:
                 last_time = self._cooldowns.get(cooldown_key, 0)
                 now = time.time()
                 if now - last_time < self._cooldown_seconds:
-                    logger.debug(
-                        f"Alert suppressed (cooldown): {threat.threat_type} on {camera_id}"
-                    )
                     continue
                 self._cooldowns[cooldown_key] = now
 
@@ -145,9 +153,11 @@ class AlertManager:
             try:
                 self._alert_queue.put_nowait(alert_data)
             except Exception:
-                logger.warning("Alert queue full — dropping alert")
+                logger.warning("Alert queue full")
 
-            # Track active alert
+            # Track active alert and for deduplication
+            self._record_event(threat, camera_id, incident_id)
+            
             self._alert_counter += 1
             with self._lock:
                 self._active_alerts.append({
@@ -159,10 +169,55 @@ class AlertManager:
                     "time": time.time(),
                     "acknowledged": False,
                 })
-
-                # Keep only last 50 active alerts
                 if len(self._active_alerts) > 50:
                     self._active_alerts = self._active_alerts[-50:]
+
+    def _is_duplicate(self, threat, camera_id: str) -> bool:
+        """Check for spatial and temporal duplication."""
+        now = time.time()
+        for event in self._recent_events:
+            if event["camera_id"] == camera_id and event["type"] == threat.threat_type:
+                # Temporal check
+                if now - event["time"] < self._dedup_window:
+                    # Spatial check: if bbox IoU is high, it's definitely the same event
+                    iou = self._calculate_iou(threat.location_bbox, event["bbox"])
+                    if iou > 0.5:
+                        return True
+        return False
+
+    def _calculate_iou(self, box1, box2) -> float:
+        """Simple IoU calculation for bboxes."""
+        if not box1 or not box2: return 0.0
+        x1, y1, x2, y2 = box1
+        x3, y3, x4, y4 = box2
+        
+        xi1, yi1 = max(x1, x3), max(y1, y3)
+        xi2, yi2 = min(x2, x4), min(y2, y4)
+        inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+        
+        box1_area = (x2 - x1) * (y2 - y1)
+        box2_area = (x4 - x3) * (y4 - y3)
+        union_area = box1_area + box2_area - inter_area
+        return inter_area / (union_area + 1e-6)
+
+    def _correlate_incident(self, threat, camera_id: str) -> Optional[dict]:
+        """Correlate same threat type across different cameras in a short window."""
+        now = time.time()
+        for event in self._recent_events:
+            if event["camera_id"] != camera_id and event["type"] == threat.threat_type:
+                if now - event["time"] < 10.0: # 10s window for multi-camera correlation
+                    return event
+        return None
+
+    def _record_event(self, threat, camera_id: str, incident_id: int):
+        """Record event for future deduplication."""
+        self._recent_events.append({
+            "camera_id": camera_id,
+            "type": threat.threat_type,
+            "bbox": threat.location_bbox,
+            "time": time.time(),
+            "incident_id": incident_id,
+        })
 
     def _process_queue_loop(self):
         """Background thread that processes the alert send queue."""
