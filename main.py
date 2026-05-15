@@ -23,11 +23,14 @@ from alerts.telegram_bot import TelegramAlertBot
 
 
 class SafeWatchApp:
-    """The core application coordinator."""
+    """The core application coordinator with hardware auto-detection."""
 
     def __init__(self, config_path: str = "config.yaml") -> None:
         self._config = self._load_config(config_path)
         self._setup_logging()
+        
+        # Hardware auto-detection
+        self._device = self._detect_hardware()
         
         # 1. Initialize Database
         self._db = DatabaseManager(self._config["database"]["path"])
@@ -36,32 +39,55 @@ class SafeWatchApp:
         # 2. Initialize Hardware/Capture
         self._stream_manager = StreamManager()
         
-        # 3. Initialize AI Detectors
+        # 3. Initialize AI Detectors with auto-detected device
         self._person_detector = PersonDetector(
             model_path=self._config["detection"]["yolo"]["model_path"],
-            confidence=self._config["detection"]["yolo"]["confidence_threshold"]
+            confidence=self._config["detection"]["yolo"]["confidence_threshold"],
+            device=self._device
         )
-        self._pose_estimator = PoseEstimator()
+        self._pose_estimator = PoseEstimator(config=self._config, device=self._device)
         self._flow_analyzer = OpticalFlowAnalyzer()
         
         # 4. Initialize Engines
-        self._threat_engine = ThreatEngine(self._config)
+        self._threat_engine = ThreatEngine(self._config, zone_manager=None) # ZoneManager initialized later
         
         # 5. Initialize Alerting
         self._telegram_bot = None
         if self._config["alerts"]["telegram"]["enabled"]:
-            self._telegram_bot = TelegramAlertBot(
+            from alerts.telegram_bot import SafeWatchTelegramBot
+            self._telegram_bot = SafeWatchTelegramBot(
                 token=self._config["alerts"]["telegram"]["bot_token"],
                 chat_id=self._config["alerts"]["telegram"]["chat_id"]
             )
         
         self._alert_manager = AlertManager(
-            self._telegram_bot, 
-            SnapshotBuilder()
+            config=self._config,
+            telegram_bot=self._telegram_bot,
+            incident_logger=self._incident_logger
         )
         
         self._running = True
-        logger.info("SafeWatch App initialized successfully")
+        logger.info(f"SafeWatch App initialized successfully on {self._device.upper()}")
+
+    def _detect_hardware(self) -> str:
+        """Detect available hardware acceleration (CUDA, ROCm, etc)."""
+        try:
+            import onnxruntime as ort
+            providers = ort.get_available_providers()
+            if 'CUDAExecutionProvider' in providers:
+                logger.info("Hardware Acceleration: NVIDIA CUDA detected")
+                return "cuda"
+            elif 'ROCMExecutionProvider' in providers:
+                logger.info("Hardware Acceleration: AMD ROCm detected")
+                return "cuda" # YOLO treats ROCm as cuda usually
+            elif 'CoreMLExecutionProvider' in providers:
+                logger.info("Hardware Acceleration: Apple CoreML detected")
+                return "mps"
+        except ImportError:
+            pass
+        
+        logger.info("Hardware Acceleration: CPU only")
+        return "cpu"
 
     def _load_config(self, path: str) -> dict:
         with open(path, 'r') as f:
