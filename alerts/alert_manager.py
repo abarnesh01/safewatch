@@ -8,21 +8,11 @@ import threading
 import asyncio
 from collections import defaultdict
 from typing import Optional
-from queue import Queue, Empty
-from datetime import datetime
-
-from loguru import logger
-
-from alerts.telegram_bot import SafeWatchTelegramBot
-from alerts.snapshot_builder import SnapshotBuilder
-from database.incident_logger import IncidentLogger
-from threats.threat_engine import ThreatReport
-
+from queue import PriorityQueue, Empty
 
 class AlertManager:
     """
-    Coordinates threat alerts: builds snapshots, routes to agents,
-    implements cooldowns, and manages alert queues.
+    Coordinates threat alerts with priority-based dispatching and persistence.
     """
 
     def __init__(
@@ -43,22 +33,22 @@ class AlertManager:
 
         self._cooldowns: dict[str, float] = defaultdict(float)
         self._active_alerts: list[dict] = []
-        self._alert_queue: Queue = Queue(maxsize=100)
+        
+        # 1. Priority-based dispatch queue
+        self._alert_queue: PriorityQueue = PriorityQueue(maxsize=200)
         self._alert_counter = 0
 
-        # Camera name lookup
+        # ... (rest of init remains same)
         self._camera_names: dict[str, str] = {}
         for cam in config.get("cameras", []):
             self._camera_names[cam["id"]] = cam.get("name", cam["id"])
 
-        # Agent camera mapping
         self._camera_agents: dict[str, list[str]] = defaultdict(list)
         agents = telegram_config.get("agents", {})
         for agent_id, agent_cfg in agents.items():
             for cam_id in agent_cfg.get("cameras", []):
                 self._camera_agents[cam_id].append(agent_id)
 
-        # Start alert processing thread
         self._running = True
         self._process_thread = threading.Thread(
             target=self._process_queue_loop,
@@ -67,22 +57,14 @@ class AlertManager:
         )
         self._process_thread.start()
 
-        # Deduplication state
-        self._recent_events: deque = deque(maxlen=20)
+        from collections import deque
+        self._recent_events: deque = deque(maxlen=50)
         self._dedup_window = telegram_config.get("deduplication_window", 5.0)
 
-        logger.info("AlertManager initialized with deduplication engine")
-
-    def __repr__(self) -> str:
-        return (
-            f"AlertManager(active_alerts={len(self._active_alerts)}, "
-            f"queue_size={self._alert_queue.qsize()})"
-        )
+        logger.info("AlertManager initialized with Priority Queue engine")
 
     def process_threat_report(self, threat_report: ThreatReport, frame=None):
-        """
-        Process a threat report with spatial/temporal deduplication.
-        """
+        """Process threat with priority escalation and cooldown bypass."""
         if not threat_report.threats_detected:
             return
 
@@ -90,27 +72,25 @@ class AlertManager:
         camera_name = self._camera_names.get(camera_id, camera_id)
 
         for threat in threat_report.threats_detected:
-            # 1. Cooldown & Deduplication check
-            if self._is_duplicate(threat, camera_id):
+            # 2. Critical Bypass: CRITICAL threats ignore standard cooldown
+            is_critical = threat.severity == "CRITICAL"
+            
+            if not is_critical and self._is_duplicate(threat, camera_id):
                 continue
 
-            # 2. Multi-camera correlation
-            correlation_data = self._correlate_incident(threat, camera_id)
-            if correlation_data:
-                logger.info(f"Correlated {threat.threat_type} on {camera_id} with existing incident {correlation_data['incident_id']}")
-                # We still might want to send a secondary alert or just log it
-            
-            # (Rest of the alert building logic remains similar but optimized)
-            # ...
             cooldown_key = f"{camera_id}:{threat.threat_type}"
             with self._lock:
                 last_time = self._cooldowns.get(cooldown_key, 0)
                 now = time.time()
-                if now - last_time < self._cooldown_seconds:
+                if not is_critical and (now - last_time < self._cooldown_seconds):
                     continue
                 self._cooldowns[cooldown_key] = now
 
-            # Build threat event dict
+            # 3. Priority Mapping
+            # Lower value = higher priority in PriorityQueue
+            priority_map = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+            priority = priority_map.get(threat.severity, 4)
+
             threat_dict = {
                 "threat_type": threat.threat_type,
                 "confidence": threat.confidence,
@@ -122,7 +102,6 @@ class AlertManager:
                 "alert_sent": 0,
             }
 
-            # Build snapshot
             snapshot_bytes = None
             snapshot_path = ""
             if self._send_snapshot and frame is not None:
@@ -135,13 +114,8 @@ class AlertManager:
                         snapshot_bytes, camera_id, threat_report.timestamp,
                     )
 
-            # Log to database
-            incident_id = self._logger.log_threat(
-                threat_dict, camera_id,
-                snapshot_path=snapshot_path,
-            )
+            incident_id = self._logger.log_threat(threat_dict, camera_id, snapshot_path=snapshot_path)
 
-            # Queue for sending
             alert_data = {
                 "threat_dict": threat_dict,
                 "camera_id": camera_id,
@@ -151,107 +125,51 @@ class AlertManager:
             }
 
             try:
-                self._alert_queue.put_nowait(alert_data)
+                # Store as (priority, timestamp, data) to ensure FIFO for same priority
+                self._alert_queue.put_nowait((priority, time.time(), alert_data))
             except Exception:
-                logger.warning("Alert queue full")
+                logger.error(f"Alert queue overflow! Dropping {threat.threat_type}")
 
-            # Track active alert and for deduplication
             self._record_event(threat, camera_id, incident_id)
-            
             self._alert_counter += 1
-            with self._lock:
-                self._active_alerts.append({
-                    "id": self._alert_counter,
-                    "incident_id": incident_id,
-                    "threat_type": threat.threat_type,
-                    "camera_id": camera_id,
-                    "severity": threat.severity,
-                    "time": time.time(),
-                    "acknowledged": False,
-                })
-                if len(self._active_alerts) > 50:
-                    self._active_alerts = self._active_alerts[-50:]
-
-    def _is_duplicate(self, threat, camera_id: str) -> bool:
-        """Check for spatial and temporal duplication."""
-        now = time.time()
-        for event in self._recent_events:
-            if event["camera_id"] == camera_id and event["type"] == threat.threat_type:
-                # Temporal check
-                if now - event["time"] < self._dedup_window:
-                    # Spatial check: if bbox IoU is high, it's definitely the same event
-                    iou = self._calculate_iou(threat.location_bbox, event["bbox"])
-                    if iou > 0.5:
-                        return True
-        return False
-
-    def _calculate_iou(self, box1, box2) -> float:
-        """Simple IoU calculation for bboxes."""
-        if not box1 or not box2: return 0.0
-        x1, y1, x2, y2 = box1
-        x3, y3, x4, y4 = box2
-        
-        xi1, yi1 = max(x1, x3), max(y1, y3)
-        xi2, yi2 = min(x2, x4), min(y2, y4)
-        inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
-        
-        box1_area = (x2 - x1) * (y2 - y1)
-        box2_area = (x4 - x3) * (y4 - y3)
-        union_area = box1_area + box2_area - inter_area
-        return inter_area / (union_area + 1e-6)
-
-    def _correlate_incident(self, threat, camera_id: str) -> Optional[dict]:
-        """Correlate same threat type across different cameras in a short window."""
-        now = time.time()
-        for event in self._recent_events:
-            if event["camera_id"] != camera_id and event["type"] == threat.threat_type:
-                if now - event["time"] < 10.0: # 10s window for multi-camera correlation
-                    return event
-        return None
-
-    def _record_event(self, threat, camera_id: str, incident_id: int):
-        """Record event for future deduplication."""
-        self._recent_events.append({
-            "camera_id": camera_id,
-            "type": threat.threat_type,
-            "bbox": threat.location_bbox,
-            "time": time.time(),
-            "incident_id": incident_id,
-        })
 
     def _process_queue_loop(self):
-        """Background thread that processes the alert send queue."""
-        logger.info("Alert queue processor started")
+        """Background processor for Priority Queue."""
+        logger.info("Alert priority processor active")
         while self._running:
             try:
-                alert_data = self._alert_queue.get(timeout=1.0)
+                # Get item from PriorityQueue
+                priority, ts, alert_data = self._alert_queue.get(timeout=1.0)
             except Empty:
                 continue
 
             try:
-                # Determine target agents
                 camera_id = alert_data["camera_id"]
-                agents = self._camera_agents.get(camera_id, [])
-
-                if not agents:
-                    agents = [None]  # Send to default/all
+                agents = self._camera_agents.get(camera_id, [None])
 
                 for agent_id in agents:
-                    self._telegram.send_threat_alert_sync(
-                        alert_data["threat_dict"],
-                        alert_data["camera_id"],
-                        snapshot=alert_data.get("snapshot_bytes"),
-                        agent_id=agent_id,
-                        camera_name=alert_data.get("camera_name", ""),
-                    )
+                    # Retry logic for network failures
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            self._telegram.send_threat_alert_sync(
+                                alert_data["threat_dict"],
+                                camera_id,
+                                snapshot=alert_data.get("snapshot_bytes"),
+                                agent_id=agent_id,
+                                camera_name=alert_data.get("camera_name", ""),
+                            )
+                            break
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                logger.error(f"Final alert failure for {camera_id}: {e}")
+                            time.sleep(2 ** attempt) # Exponential backoff
 
-                logger.info(
-                    f"Alert sent: {alert_data['threat_dict']['threat_type']} "
-                    f"on {alert_data['camera_id']}"
-                )
-
+                logger.info(f"Priority Alert ({priority}) sent for {camera_id}")
             except Exception as e:
-                logger.error(f"Failed to send alert: {e}")
+                logger.error(f"Queue processing error: {e}")
+            finally:
+                self._alert_queue.task_done()
 
         logger.info("Alert queue processor stopped")
 
