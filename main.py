@@ -12,9 +12,6 @@ import asyncio
 import threading
 from pathlib import Path
 
-import cv2
-import numpy as np
-
 import yaml
 from loguru import logger
 from dotenv import load_dotenv
@@ -154,7 +151,7 @@ def run_dashboard(config: dict):
     return proc
 
 
-def main_loop(config: dict, show_display: bool = True):
+def main_loop(config: dict):
     """Main processing loop."""
 
     # Import components
@@ -231,15 +228,6 @@ def main_loop(config: dict, show_display: bool = True):
 
     logger.info("🚀 SafeWatch is now running!")
     logger.info("Press Ctrl+C to stop.")
-
-    # ─── Live Display Setup ───────────────────────────────────────
-    if show_display:
-        cv2.namedWindow("SafeWatch Monitor", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("SafeWatch Monitor", 960, 540)
-        logger.info("📺 Live monitor window opened — press 'q' to quit")
-    display_fps = 0.0
-    fps_timer = time.time()
-    fps_frame_count = 0
 
     # ─── Graceful Shutdown Handler ────────────────────────────────
     running = True
@@ -324,119 +312,14 @@ def main_loop(config: dict, show_display: bool = True):
                         "threats_today": 0,
                     })
 
-                # ─── 8. Live Display ──────────────────────────────
-                if show_display:
-                    display = frame.copy()
-
-                    # Draw person bounding boxes
-                    display = person_detector.draw_detections(display, persons)
-
-                    # Draw pose skeletons
-                    display = pose_estimator.draw_skeleton(display, poses)
-
-                    # Draw threat overlays from the engine
-                    if threat_report.annotated_frame is not None:
-                        # Blend the threat border/labels onto our display
-                        display = threat_report.annotated_frame.copy()
-                        # Re-draw persons + skeletons on top of threat overlay
-                        display = person_detector.draw_detections(display, persons)
-                        display = pose_estimator.draw_skeleton(display, poses)
-
-                    # Draw zones if available
-                    display = zone_manager.draw_zones(display)
-
-                    # ── HUD overlay ────────────────────────────────
-                    h_disp, w_disp = display.shape[:2]
-
-                    # Calculate FPS
-                    fps_frame_count += 1
-                    elapsed = time.time() - fps_timer
-                    if elapsed >= 1.0:
-                        display_fps = fps_frame_count / elapsed
-                        fps_frame_count = 0
-                        fps_timer = time.time()
-
-                    # Semi-transparent HUD bar at the top
-                    hud_h = 38
-                    overlay = display.copy()
-                    cv2.rectangle(overlay, (0, 0), (w_disp, hud_h), (20, 20, 20), -1)
-                    cv2.addWeighted(overlay, 0.7, display, 0.3, 0, display)
-
-                    # HUD text
-                    risk = threat_report.overall_risk_level
-                    risk_colors = {
-                        "SAFE": (0, 200, 0), "LOW": (0, 255, 255),
-                        "MEDIUM": (0, 165, 255), "HIGH": (0, 0, 255),
-                        "CRITICAL": (255, 0, 128),
-                    }
-                    risk_col = risk_colors.get(risk, (200, 200, 200))
-
-                    font = cv2.FONT_HERSHEY_SIMPLEX
-                    y_text = 26
-
-                    # SafeWatch logo text
-                    cv2.putText(display, "SAFEWATCH", (10, y_text),
-                                font, 0.6, (0, 220, 255), 2, cv2.LINE_AA)
-
-                    # Camera ID
-                    cv2.putText(display, f"| {cam_id}", (140, y_text),
-                                font, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
-
-                    # FPS
-                    cv2.putText(display, f"FPS: {display_fps:.1f}", (260, y_text),
-                                font, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-
-                    # Persons count
-                    cv2.putText(display, f"Persons: {len(persons)}", (380, y_text),
-                                font, 0.5, (255, 200, 0), 1, cv2.LINE_AA)
-
-                    # Poses count
-                    cv2.putText(display, f"Poses: {len(poses)}", (510, y_text),
-                                font, 0.5, (200, 150, 255), 1, cv2.LINE_AA)
-
-                    # Risk level (right-aligned)
-                    risk_text = f"RISK: {risk}"
-                    (tw, _), _ = cv2.getTextSize(risk_text, font, 0.6, 2)
-                    cv2.putText(display, risk_text, (w_disp - tw - 15, y_text),
-                                font, 0.6, risk_col, 2, cv2.LINE_AA)
-
-                    # Threat count in bottom bar if any threats
-                    n_threats = len(threat_report.threats_detected)
-                    if n_threats > 0:
-                        bar_y = h_disp - 32
-                        overlay2 = display.copy()
-                        cv2.rectangle(overlay2, (0, bar_y), (w_disp, h_disp), (0, 0, 80), -1)
-                        cv2.addWeighted(overlay2, 0.7, display, 0.3, 0, display)
-                        threat_text = f"⚠ {n_threats} THREAT{'S' if n_threats > 1 else ''} DETECTED"
-                        cv2.putText(display, threat_text, (10, h_disp - 10),
-                                    font, 0.55, (0, 0, 255), 2, cv2.LINE_AA)
-
-                    # Timestamp
-                    ts_text = time.strftime("%H:%M:%S")
-                    (tw2, _), _ = cv2.getTextSize(ts_text, font, 0.45, 1)
-                    cv2.putText(display, ts_text, (w_disp - tw2 - 10, h_disp - 10),
-                                font, 0.45, (180, 180, 180), 1, cv2.LINE_AA)
-
-                    cv2.imshow("SafeWatch Monitor", display)
-
             except Exception as e:
                 logger.error(f"[{cam_id}] Processing error: {e}")
 
-        # Handle display key events + small sleep
-        if show_display:
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q'):
-                logger.info("'q' pressed — shutting down...")
-                running = False
-        else:
-            time.sleep(0.01)
+        # Small sleep to prevent CPU spinning
+        time.sleep(0.01)
 
     # ─── Cleanup ──────────────────────────────────────────────────
     logger.info("Shutting down SafeWatch...")
-
-    if show_display:
-        cv2.destroyAllWindows()
-
     stream_manager.stop_all()
     alert_manager.stop()
     threat_engine.shutdown()
@@ -468,10 +351,6 @@ def main():
     parser.add_argument(
         "--dashboard-only", action="store_true",
         help="Start only the Streamlit dashboard",
-    )
-    parser.add_argument(
-        "--no-display", action="store_true",
-        help="Run headless without the live monitor window",
     )
 
     args = parser.parse_args()
@@ -509,7 +388,7 @@ def main():
         return
 
     # Run the main system
-    main_loop(config, show_display=not args.no_display)
+    main_loop(config)
 
 
 if __name__ == "__main__":

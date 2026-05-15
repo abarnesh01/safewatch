@@ -109,3 +109,67 @@
 2026-05-15 17:37:52 | INFO    | main:main_loop:230 — Press Ctrl+C to stop.
 2026-05-15 17:38:01 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
 2026-05-15 17:38:01 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:41:17 | INFO    | main:main:489 — SafeWatch v1.0.0
+2026-05-15 17:41:17 | INFO    | main:main:490 — Debug mode: False
+2026-05-15 17:41:17 | INFO    | main:main:491 — Python: 3.14.4 (main, Apr  8 2026, 17:48:49) [GCC 15.2.1 20260209]
+2026-05-15 17:41:17 | INFO    | main:main:492 — Config: config.yaml
+2026-05-15 17:41:18 | INFO    | main:main_loop:175 — Initializing SafeWatch components...
+2026-05-15 17:41:18 | INFO    | db_manager:__init__:24 — DatabaseManager initialized at logs/safewatch.db
+2026-05-15 17:41:18 | INFO    | incident_logger:__init__:22 — IncidentLogger initialized
+2026-05-15 17:41:18 | INFO    | main:main_loop:181 — ✅ Database initialized
+2026-05-15 17:41:18 | INFO    | camera_stream:__init__:47 — CameraStream created: id=CAM-01 source=0 name=Main Entrance
+2026-05-15 17:41:18 | INFO    | frame_sampler:__init__:40 — FrameSampler created for CAM-01: skip=5, resolution=(640, 480)
+2026-05-15 17:41:18 | INFO    | stream_manager:_init_streams:69 — Camera configured: CAM-01 (Main Entrance)
+2026-05-15 17:41:18 | INFO    | stream_manager:_init_streams:43 — Camera CAM-02 is disabled, skipping
+2026-05-15 17:41:18 | INFO    | stream_manager:__init__:32 — StreamManager initialized with 1 cameras
+2026-05-15 17:41:18 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
+2026-05-15 17:41:18 | INFO    | camera_stream:_capture_loop:95 — [CAM-01] Capture thread started
+2026-05-15 17:41:18 | INFO    | camera_stream:start:171 — [CAM-01] Camera stream started
+2026-05-15 17:41:18 | INFO    | stream_manager:start_all:77 — Started stream: CAM-01
+2026-05-15 17:41:18 | INFO    | stream_manager:_health_monitor_loop:147 — Health monitor started
+2026-05-15 17:41:18 | INFO    | stream_manager:start_all:85 — All camera streams started
+2026-05-15 17:41:18 | INFO    | main:main_loop:186 — ✅ Camera streams started
+2026-05-15 17:41:20 | INFO    | person_detector:_load_model:63 — YOLOv8 model loaded from models/yolov8n.pt
+2026-05-15 17:41:20 | INFO    | main:main_loop:190 — ✅ Person detector loaded
+2026-05-15 17:41:20 | INFO    | pose_estimator:__init__:119 — PoseEstimator initialized (model=pose_landmarker_lite.task)
+2026-05-15 17:41:20 | INFO    | main:main_loop:194 — ✅ Pose estimator loaded
+2026-05-15 17:41:20 | INFO    | optical_flow:__init__:63 — OpticalFlowAnalyzer initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | main:main_loop:198 — ✅ Optical flow analyzer ready
+2026-05-15 17:41:20 | INFO    | zone_manager:__init__:30 — ZoneManager initialized with 0 zones
+2026-05-15 17:41:20 | INFO    | main:main_loop:202 — ✅ Zone manager loaded
+2026-05-15 17:41:20 | INFO    | velocity_tracker:__init__:29 — VelocityTracker initialized (history=60, timeout=5.0s)
+2026-05-15 17:41:20 | INFO    | main:main_loop:206 — ✅ Velocity tracker ready
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | WARNING | action_classifier:_load_model:65 — ONNX model not found at models/action_classifier.onnx — using rule-based fallback
+2026-05-15 17:41:20 | INFO    | main:main_loop:210 — ✅ Action classifier ready (ActionClassifier(mode=rule-based, buffer_size=30))
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | fight_detector:__init__:47 — FightDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | fall_detector:__init__:42 — FallDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | harassment_detector:__init__:38 — HarassmentDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | assault_detector:__init__:36 — AssaultDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | unconscious_detector:__init__:48 — UnconsciousDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | trespass_detector:__init__:32 — TrespassDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | crowd_panic_detector:__init__:30 — CrowdPanicDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | accident_detector:__init__:29 — AccidentDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | skeleton_analyzer:__init__:21 — SkeletonAnalyzer initialized
+2026-05-15 17:41:20 | INFO    | abuse_detector:__init__:41 — AbuseDetector initialized (enabled=True)
+2026-05-15 17:41:20 | INFO    | threat_engine:__init__:87 — ThreatEngine initialized with all detectors
+2026-05-15 17:41:20 | INFO    | main:main_loop:214 — ✅ Threat engine initialized
+2026-05-15 17:41:20 | INFO    | telegram_bot:__init__:50 — Telegram bot initialized
+2026-05-15 17:41:20 | INFO    | main:main_loop:218 — ✅ Telegram bot ready (SafeWatchTelegramBot(enabled=True, agents=['agent_main', 'agent_parking']))
+2026-05-15 17:41:20 | INFO    | snapshot_builder:__init__:27 — SnapshotBuilder initialized
+2026-05-15 17:41:20 | INFO    | alert_manager:_process_queue_loop:169 — Alert queue processor started
+2026-05-15 17:41:20 | INFO    | alert_manager:__init__:70 — AlertManager initialized
+2026-05-15 17:41:20 | INFO    | main:main_loop:222 — ✅ Alert manager ready
+2026-05-15 17:41:20 | INFO    | main:run_dashboard:148 — Starting dashboard at http://0.0.0.0:8501
+2026-05-15 17:41:20 | INFO    | main:main_loop:228 — ✅ Dashboard started
+2026-05-15 17:41:20 | INFO    | main:main_loop:232 — 🚀 SafeWatch is now running!
+2026-05-15 17:41:20 | INFO    | main:main_loop:233 — Press Ctrl+C to stop.
+2026-05-15 17:41:23 | INFO    | main:main_loop:239 — 📺 Live monitor window opened — press 'q' to quit
+2026-05-15 17:41:29 | WARNING | camera_stream:_capture_loop:115 — [CAM-01] Failed to read frame
+2026-05-15 17:41:29 | WARNING | camera_stream:_capture_loop:100 — [CAM-01] Connection lost, attempting reconnect in 5.0s...
+2026-05-15 17:41:35 | INFO    | camera_stream:_open_capture:85 — [CAM-01] Camera opened successfully: 0
