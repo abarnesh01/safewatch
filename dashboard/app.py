@@ -72,7 +72,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["🖥️ Live Monitor", "📋 Incident History", "📹 Camera Management", "⚙️ System Settings"],
+        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "📹 Camera Management", "⚙️ System Settings"],
         label_visibility="collapsed",
     )
 
