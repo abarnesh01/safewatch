@@ -25,43 +25,85 @@ class FrameSampler:
         frame_skip: int = 5,
         resolution: tuple[int, int] = (640, 480),
         motion_threshold: float = 500.0,
+        config: Optional[dict] = None,
     ):
         self._stream = camera_stream
         self._frame_skip = frame_skip
         self._resolution = resolution
-        self._motion_threshold = motion_threshold
+        self._base_threshold = motion_threshold
+        self._current_threshold = motion_threshold
+        
+        # Adaptive parameters
+        sampler_cfg = config.get("sampling", {}) if config else {}
+        self._adaptive_enabled = sampler_cfg.get("adaptive_motion", True)
+        self._sensitivity = sampler_cfg.get("sensitivity", 1.0)
+        
         self._bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=500,
-            varThreshold=50,
+            varThreshold=sampler_cfg.get("bg_var_threshold", 50),
             detectShadows=False,
         )
+        
+        self._motion_history = deque(maxlen=100)
+        self._light_level_history = deque(maxlen=50)
         self._frame_number = 0
         self._last_processed_time = 0.0
+        
         logger.info(
-            f"FrameSampler created for {camera_stream.camera_id}: "
-            f"skip={frame_skip}, resolution={resolution}"
+            f"FrameSampler initialized for {camera_stream.camera_id}: "
+            f"adaptive={self._adaptive_enabled}, base_threshold={motion_threshold}"
         )
 
     def __repr__(self) -> str:
         return (
             f"FrameSampler(camera={self._stream.camera_id}, "
-            f"skip={self._frame_skip}, frame_num={self._frame_number})"
+            f"threshold={self._current_threshold:.1f}, skip={self._frame_skip})"
         )
 
     def _detect_motion(self, frame: np.ndarray) -> bool:
         """
-        Detect if there is significant motion in the frame using background subtraction.
-
-        Args:
-            frame: Input BGR frame
-
-        Returns:
-            True if significant motion detected
+        Detect motion with adaptive thresholding and low-light compensation.
         """
+        # 1. Pre-process for noise suppression
         small = cv2.resize(frame, (160, 120))
-        fg_mask = self._bg_subtractor.apply(small)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        
+        # 2. Track lighting levels for compensation
+        avg_brightness = np.mean(blurred)
+        self._light_level_history.append(avg_brightness)
+        
+        # Low-light compensation factor
+        light_factor = 1.0
+        if len(self._light_level_history) > 10:
+            avg_light = np.mean(self._light_level_history)
+            if avg_light < 50: # Dim scene
+                light_factor = 1.5 # Increase sensitivity in low light
+            elif avg_light > 200: # Very bright scene
+                light_factor = 0.8 # Decrease sensitivity to avoid glare triggers
+
+        # 3. Apply background subtraction
+        fg_mask = self._bg_subtractor.apply(blurred)
+        
+        # Noise suppression (remove small flickers)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+        
         motion_pixels = cv2.countNonZero(fg_mask)
-        return motion_pixels > self._motion_threshold
+        self._motion_history.append(motion_pixels)
+        
+        # 4. Adaptive threshold adjustment
+        if self._adaptive_enabled and len(self._motion_history) > 20:
+            # Baseline is the median noise level in the scene
+            baseline_noise = np.median(self._motion_history)
+            # Threshold scales with baseline noise + light factor
+            self._current_threshold = (self._base_threshold + baseline_noise * 0.5) / (self._sensitivity * light_factor)
+        else:
+            self._current_threshold = self._base_threshold / (self._sensitivity * light_factor)
+
+        # 5. Final trigger decision
+        is_motion = motion_pixels > self._current_threshold
+        return is_motion
 
     def get_frame(self) -> Generator[dict, None, None]:
         """
