@@ -9,8 +9,10 @@ import sys
 import yaml
 import time
 import psutil
+import threading
 from pathlib import Path
 from loguru import logger
+from utils.runtime_isolation import RuntimePath
 
 from database.db_manager import DatabaseManager
 from database.incident_logger import IncidentLogger
@@ -201,10 +203,33 @@ class SafeWatchApp:
         """Update system telemetry and share with dashboard."""
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
-        
-        # In a production system, this would be pushed to a shared state or DB
-        # For this build, we use a simple singleton or log-based approach
         logger.debug(f"Telemetry [{cam_id}]: Latency={latency:.1f}ms CPU={cpu}% RAM={ram}%")
+
+    def _start_cleanup_service(self) -> None:
+        """Background service to clean up stale runtime artifacts."""
+        def cleanup_loop():
+            while self._running:
+                logger.info("Running scheduled runtime cleanup...")
+                try:
+                    # Clean snapshots older than 7 days
+                    retention_days = self._config["system"].get("snapshot_retention_days", 7)
+                    threshold = time.time() - (retention_days * 86400)
+                    
+                    for p in RuntimePath.SNAPSHOTS.glob("*.jpg"):
+                        if p.stat().st_mtime < threshold:
+                            p.unlink()
+                            
+                    # Clean telemetry/runtime cache
+                    for p in RuntimePath.CACHE.glob("*"):
+                        if p.is_file() and p.stat().st_mtime < (time.time() - 3600): # 1 hour
+                            p.unlink()
+                            
+                except Exception as e:
+                    logger.error(f"Cleanup service error: {e}")
+                
+                time.sleep(3600) # Run every hour
+
+        threading.Thread(target=cleanup_loop, name="CleanupService", daemon=True).start()
 
     def shutdown(self) -> None:
         logger.info("Shutting down SafeWatch...")
