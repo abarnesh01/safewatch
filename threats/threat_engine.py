@@ -169,17 +169,21 @@ class ThreatEngine:
 
         if flow_result is not None and velocity_tracker is not None:
             try:
-                raw_threats.extend(self._crowd_panic_detector.detect(
-                    persons, flow_result, velocity_tracker, fall_events
-                ))
+                crowd_detector = self._get_detector("crowd_panic")
+                if crowd_detector:
+                    raw_threats.extend(crowd_detector.detect(
+                        persons, flow_result, velocity_tracker, fall_events
+                    ))
             except Exception as e:
                 logger.error(f"CrowdPanicDetector failed: {e}")
 
         if velocity_tracker is not None:
             try:
-                raw_threats.extend(self._accident_detector.detect(
-                    persons, poses, flow_result, velocity_tracker, fall_events
-                ))
+                accident_detector = self._get_detector("accident")
+                if accident_detector:
+                    raw_threats.extend(accident_detector.detect(
+                        persons, poses, flow_result, velocity_tracker, fall_events
+                    ))
             except Exception as e:
                 logger.error(f"AccidentDetector failed: {e}")
 
