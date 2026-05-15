@@ -116,6 +116,10 @@ class AlertManager:
 
             incident_id = self._logger.log_threat(threat_dict, camera_id, snapshot_path=snapshot_path)
 
+            # 4. Auto Forensic Export for CRITICAL
+            if is_critical:
+                threading.Thread(target=self._logger.export_forensic_bundle, args=(incident_id,), daemon=True).start()
+
             alert_data = {
                 "threat_dict": threat_dict,
                 "camera_id": camera_id,
