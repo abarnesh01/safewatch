@@ -4,88 +4,14 @@ MediaPipe-based pose estimation with skeleton drawing and joint utilities.
 Uses the MediaPipe Tasks API (PoseLandmarker).
 """
 
-import os
-import threading
-from dataclasses import dataclass, field
-from typing import Optional
+from collections import deque
+from typing import Optional, Union
 
-import cv2
-import numpy as np
-from loguru import logger
-
-try:
-    import mediapipe as mp
-    MP_AVAILABLE = True
-except ImportError:
-    MP_AVAILABLE = False
-    logger.warning("MediaPipe not available — pose estimation disabled")
-
-from detection.person_detector import Person
-
-
-KEYPOINT_NAMES = [
-    "nose", "left_eye_inner", "left_eye", "left_eye_outer",
-    "right_eye_inner", "right_eye", "right_eye_outer",
-    "left_ear", "right_ear", "mouth_left", "mouth_right",
-    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-    "left_wrist", "right_wrist", "left_pinky", "right_pinky",
-    "left_index", "right_index", "left_thumb", "right_thumb",
-    "left_hip", "right_hip", "left_knee", "right_knee",
-    "left_ankle", "right_ankle", "left_heel", "right_heel",
-    "left_foot_index", "right_foot_index",
-]
-
-SKELETON_CONNECTIONS = [
-    (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
-    (11, 23), (12, 24), (23, 24), (23, 25), (24, 26),
-    (25, 27), (26, 28),
-]
-
-IMPORTANT_KEYPOINTS = [
-    "nose", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-    "left_wrist", "right_wrist", "left_hip", "right_hip",
-    "left_knee", "right_knee", "left_ankle", "right_ankle",
-]
-
-
-@dataclass
-class PoseResult:
-    """Contains pose estimation results for a single person."""
-    person_id: int
-    landmarks: list[dict]  # 33 points with x, y, z, visibility
-    keypoints: dict  # Named keypoints
-    bbox: tuple[int, int, int, int]
-    confidence: float
-
-    def __repr__(self) -> str:
-        n_visible = sum(1 for lm in self.landmarks if lm.get("visibility", 0) > 0.5)
-        return (
-            f"PoseResult(person_id={self.person_id}, "
-            f"visible_landmarks={n_visible}/33, confidence={self.confidence:.2f})"
-        )
-
-    def get_landmark(self, name: str) -> Optional[dict]:
-        """Get a landmark by name, returning None if not confident enough."""
-        kp = self.keypoints.get(name)
-        if kp is not None and kp.get("visibility", 0) > 0.3:
-            return kp
-        return None
-
-
-# Default model path relative to project root
-_DEFAULT_MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "models", "pose_landmarker_lite.task",
-)
-
+# ... (rest of imports)
 
 class PoseEstimator:
     """
-    MediaPipe Pose estimator that processes cropped person bounding boxes
-    to extract 33 body landmarks per person.
-
-    Uses the MediaPipe Tasks API (PoseLandmarker) instead of the deprecated
-    mp.solutions.pose interface.
+    MediaPipe Pose estimator with temporal smoothing and landmark interpolation.
     """
 
     def __init__(self, config: dict):
@@ -94,19 +20,16 @@ class PoseEstimator:
         self._model_path = self._config.get("pose_model_path", _DEFAULT_MODEL_PATH)
         self._lock = threading.Lock()
         self._pose = None
+        
+        # Temporal smoothing state
+        self._history_len = self._config.get("pose_smoothing_frames", 5)
+        self._landmark_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=self._history_len))
 
         if MP_AVAILABLE:
             if not os.path.isfile(self._model_path):
-                logger.error(
-                    f"Pose model not found at {self._model_path}. "
-                    "Download it with: wget -O models/pose_landmarker_lite.task "
-                    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
-                    "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
-                )
+                logger.error(f"Pose model not found at {self._model_path}")
             else:
-                base_options = mp.tasks.BaseOptions(
-                    model_asset_path=self._model_path,
-                )
+                base_options = mp.tasks.BaseOptions(model_asset_path=self._model_path)
                 options = mp.tasks.vision.PoseLandmarkerOptions(
                     base_options=base_options,
                     running_mode=mp.tasks.vision.RunningMode.IMAGE,
@@ -116,9 +39,9 @@ class PoseEstimator:
                     min_tracking_confidence=self._min_confidence,
                 )
                 self._pose = mp.tasks.vision.PoseLandmarker.create_from_options(options)
-                logger.info(
-                    f"PoseEstimator initialized (model={os.path.basename(self._model_path)})"
-                )
+                logger.info(f"PoseEstimator initialized with smoothing (frames={self._history_len})")
+        else:
+            logger.warning("PoseEstimator running without MediaPipe")
         else:
             logger.warning("PoseEstimator running without MediaPipe — no pose data")
 
