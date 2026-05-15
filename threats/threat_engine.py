@@ -90,6 +90,9 @@ class ThreatEngine:
         self._confirmation_frames = threat_cfg.get("confirmation_frames", 3)
         self._threat_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=self._smoothing_frames))
 
+        # Profiling state
+        self._profiler: dict[str, list[float]] = defaultdict(list)
+
         logger.info(
             f"ThreatEngine initialized with temporal smoothing "
             f"(frames={self._smoothing_frames}, confirmation={self._confirmation_frames})"
@@ -116,23 +119,33 @@ class ThreatEngine:
         futures = {}
 
         if persons and poses and velocity_tracker:
+            # Profiling logic
+            def profiled_run(name, detector_func, *args):
+                start = time.time()
+                res = detector_func(*args)
+                lat = (time.time() - start) * 1000
+                with self._lock:
+                    self._profiler[name].append(lat)
+                    if len(self._profiler[name]) > 100: self._profiler[name].pop(0)
+                return res
+
             futures["fight"] = self._executor.submit(
-                self._fight_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "fight", self._fight_detector.detect, persons, poses, velocity_tracker
             )
             futures["fall"] = self._executor.submit(
-                self._fall_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "fall", self._fall_detector.detect, persons, poses, velocity_tracker
             )
             futures["harassment"] = self._executor.submit(
-                self._harassment_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "harassment", self._harassment_detector.detect, persons, poses, velocity_tracker
             )
             futures["assault"] = self._executor.submit(
-                self._assault_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "assault", self._assault_detector.detect, persons, poses, velocity_tracker
             )
             futures["unconscious"] = self._executor.submit(
-                self._unconscious_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "unconscious", self._unconscious_detector.detect, persons, poses, velocity_tracker
             )
             futures["abuse"] = self._executor.submit(
-                self._abuse_detector.detect, persons, poses, velocity_tracker
+                profiled_run, "abuse", self._abuse_detector.detect, persons, poses, velocity_tracker
             )
 
         if persons:
