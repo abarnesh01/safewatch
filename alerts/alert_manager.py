@@ -1,3 +1,7 @@
+import time
+import threading
+from collections import defaultdict
+from typing import Optional
 from queue import PriorityQueue, Empty
 from datetime import datetime
 from loguru import logger
@@ -128,6 +132,44 @@ class AlertManager:
 
             self._record_event(threat, camera_id, incident_id)
             self._alert_counter += 1
+
+    def _is_duplicate(self, threat, camera_id: str) -> bool:
+        """Check for spatial and temporal duplication."""
+        now = time.time()
+        for event in self._recent_events:
+            if event["camera_id"] == camera_id and event["type"] == threat.threat_type:
+                if now - event["time"] < self._dedup_window:
+                    iou = self._calculate_iou(threat.location_bbox, event["bbox"])
+                    if iou > 0.5:
+                        return True
+        return False
+
+    def _calculate_iou(self, box1, box2) -> float:
+        if not box1 or not box2: return 0.0
+        x1, y1, x2, y2 = box1
+        x3, y3, x4, y4 = box2
+        xi1, yi1 = max(x1, x3), max(y1, y3)
+        xi2, yi2 = min(x2, x4), min(y2, y4)
+        inter_area = max(0, xi2 - xi1) * max(0, yi2 - yi1)
+        union_area = (x2-x1)*(y2-y1) + (x4-x3)*(y4-y3) - inter_area
+        return inter_area / (union_area + 1e-6)
+
+    def _correlate_incident(self, threat, camera_id: str) -> Optional[dict]:
+        now = time.time()
+        for event in self._recent_events:
+            if event["camera_id"] != camera_id and event["type"] == threat.threat_type:
+                if now - event["time"] < 10.0:
+                    return event
+        return None
+
+    def _record_event(self, threat, camera_id: str, incident_id: int):
+        self._recent_events.append({
+            "camera_id": camera_id,
+            "type": threat.threat_type,
+            "bbox": threat.location_bbox,
+            "time": time.time(),
+            "incident_id": incident_id,
+        })
 
     def _process_queue_loop(self):
         """Background processor for Priority Queue."""
