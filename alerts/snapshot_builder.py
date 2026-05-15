@@ -63,33 +63,33 @@ class SnapshotBuilder:
         }
         jpeg_quality = quality_map.get(severity, 80)
 
+        import uuid
+        incident_uuid = str(uuid.uuid4())[:8].upper()
+
         threat_type = threat_event.get("threat_type", "UNKNOWN")
         confidence = threat_event.get("confidence", 0.0)
 
-        # (Overlay logic remains same as previous production version)
-        # ...
-        border_colors = {
-            "LOW": (0, 255, 255),
-            "MEDIUM": (0, 165, 255),
-            "HIGH": (0, 0, 255),
-            "CRITICAL": (255, 0, 128),
-        }
-        border_color = border_colors.get(severity, (0, 0, 255))
-        border_thickness = max(2, int(w * 0.005))
-        cv2.rectangle(annotated, (0, 0), (w - 1, h - 1), border_color, border_thickness)
-
-        # Banner
-        banner_text = f"  {threat_type} — {confidence:.0%}  "
+        # 3. Forensic Overlays
+        # Banner with UUID
+        banner_text = f" SAFEWATCH FORENSIC | {threat_type} | ID: {incident_uuid} "
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = w / 1000.0
-        thickness = max(1, int(w / 500))
+        font_scale = w / 1200.0
+        thickness = max(1, int(w / 600))
         (tw, th), baseline = cv2.getTextSize(banner_text, font, font_scale, thickness)
         
-        banner_h = th + baseline + 20
+        banner_h = th + baseline + 25
         cv2.rectangle(annotated, (0, 0), (w, banner_h), border_color, -1)
-        cv2.putText(annotated, banner_text, (10, th + 10), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
+        cv2.putText(annotated, banner_text, (15, th + 15), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
-        # Bboxes
+        # Confidence Bar
+        bar_w = int(w * 0.2)
+        bar_h = 10
+        bar_x, bar_y = w - bar_w - 20, 15
+        cv2.rectangle(annotated, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (50, 50, 50), -1)
+        cv2.rectangle(annotated, (bar_x, bar_y), (bar_x + int(bar_w * confidence), bar_y + bar_h), (0, 255, 0), -1)
+        cv2.putText(annotated, f"CONF: {confidence:.0%}", (bar_x, bar_y + 30), font, font_scale*0.6, (255, 255, 255), 1, cv2.LINE_AA)
+
+        # Bboxes & Labels
         location = threat_event.get("location_bbox")
         if location:
             # Scale bbox if resized
@@ -100,12 +100,22 @@ class SnapshotBuilder:
             
             x1, y1, x2, y2 = location
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 255), max(1, int(w/400)))
+            
+            # Label
+            label = f"SUBJECT [{threat_type}]"
+            (lw, lh), _ = cv2.getTextSize(label, font, font_scale*0.5, 1)
+            cv2.rectangle(annotated, (x1, y1 - lh - 10), (x1 + lw + 10, y1), (0, 255, 255), -1)
+            cv2.putText(annotated, label, (x1 + 5, y1 - 5), font, font_scale*0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
-        # Timestamp & Metadata
-        dt_str = datetime.fromtimestamp(timestamp).strftime("%d/%m/%Y %H:%M:%S")
-        cv2.putText(annotated, f"{camera_name or camera_id} | {dt_str}", (10, h - 15), font, font_scale*0.6, (255, 255, 255), max(1, int(thickness*0.6)), cv2.LINE_AA)
+        # Forensic Watermark & Chain of Custody
+        dt_str = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        footer_text = f"EVIDENCE: {camera_name or camera_id} | UTC {dt_str} | SW-SEC-V3"
+        cv2.putText(annotated, footer_text, (10, h - 15), font, font_scale*0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        
+        # Evidence Watermark (Transparent diagonal)
+        cv2.putText(annotated, "SECURED FORENSIC EVIDENCE", (int(w*0.1), int(h*0.9)), font, font_scale*1.2, (100, 100, 100), 2, cv2.LINE_AA)
 
-        # 3. Optimized JPEG Encoding
+        # 4. Optimized JPEG Encoding
         success, buffer = cv2.imencode(".jpg", annotated, [
             cv2.IMWRITE_JPEG_QUALITY, jpeg_quality,
             cv2.IMWRITE_JPEG_OPTIMIZE, 1
