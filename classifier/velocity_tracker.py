@@ -80,13 +80,14 @@ class VelocityTracker:
                 if pid in self._last_seen:
                     del self._last_seen[pid]
 
-    def get_velocity(self, person_id: int, joint_name: str) -> float:
+    def get_velocity(self, person_id: int, joint_name: str, window: int = 1) -> float:
         """
         Get the velocity of a joint in pixels per second.
 
         Args:
             person_id: Person ID to query
             joint_name: Name of the joint
+            window: Number of recent samples to average over (1 = latest only)
 
         Returns:
             Velocity in pixels per second, or 0.0 if unknown.
@@ -96,24 +97,38 @@ class VelocityTracker:
             if history is None or len(history) < 2:
                 return 0.0
 
-            curr = history[-1]
-            prev = history[-2]
+            if window <= 1:
+                curr = history[-1]
+                prev = history[-2]
+                return self._compute_instant_velocity(curr, prev, joint_name)
+            
+            # Compute average velocity over a window
+            velocities = []
+            samples = list(history)[-window-1:]
+            for i in range(1, len(samples)):
+                v = self._compute_instant_velocity(samples[i], samples[i-1], joint_name)
+                if v > 0:
+                    velocities.append(v)
+            
+            return float(np.mean(velocities)) if velocities else 0.0
 
-            curr_kp = curr["keypoints"].get(joint_name)
-            prev_kp = prev["keypoints"].get(joint_name)
+    def _compute_instant_velocity(self, curr: dict, prev: dict, joint_name: str) -> float:
+        """Helper to compute velocity between two frames."""
+        curr_kp = curr["keypoints"].get(joint_name)
+        prev_kp = prev["keypoints"].get(joint_name)
 
-            if curr_kp is None or prev_kp is None:
-                return 0.0
+        if curr_kp is None or prev_kp is None:
+            return 0.0
 
-            dt = curr["timestamp"] - prev["timestamp"]
-            if dt <= 0:
-                return 0.0
+        dt = curr["timestamp"] - prev["timestamp"]
+        if dt <= 0:
+            return 0.0
 
-            dx = curr_kp["abs_x"] - prev_kp["abs_x"]
-            dy = curr_kp["abs_y"] - prev_kp["abs_y"]
-            distance = np.sqrt(dx**2 + dy**2)
+        dx = curr_kp["abs_x"] - prev_kp["abs_x"]
+        dy = curr_kp["abs_y"] - prev_kp["abs_y"]
+        distance = np.sqrt(dx**2 + dy**2)
 
-            return float(distance / dt)
+        return float(distance / dt)
 
     def get_acceleration(self, person_id: int, joint_name: str) -> float:
         """
