@@ -256,6 +256,11 @@ def main_loop(config: dict, show_display: bool = True):
     prev_frames: dict[str, any] = {}
     frame_counters: dict[str, int] = {cam_id: 0 for cam_id in camera_ids}
 
+    # Cached AI results for smooth display between processing frames
+    cached_persons: dict[str, list] = {cam_id: [] for cam_id in camera_ids}
+    cached_poses: dict[str, list] = {cam_id: [] for cam_id in camera_ids}
+    cached_threat_report: dict[str, any] = {}
+
     while running:
         for cam_id in camera_ids:
             try:
@@ -266,15 +271,10 @@ def main_loop(config: dict, show_display: bool = True):
                     if show_display:
                         res = config.get("cameras", [{}])[0].get("resolution", [640, 480])
                         no_signal = np.zeros((res[1], res[0], 3), dtype=np.uint8)
-                        # Dark background with status text
                         font = cv2.FONT_HERSHEY_SIMPLEX
                         h_ns, w_ns = no_signal.shape[:2]
-
-                        # SafeWatch branding
                         cv2.putText(no_signal, "SAFEWATCH", (w_ns // 2 - 110, h_ns // 2 - 60),
                                     font, 1.0, (0, 220, 255), 2, cv2.LINE_AA)
-
-                        # Camera status
                         stream_obj = stream_manager.get_stream(cam_id)
                         if stream_obj and stream_obj.is_connected():
                             status_text = "Buffering..."
@@ -282,112 +282,94 @@ def main_loop(config: dict, show_display: bool = True):
                         else:
                             status_text = f"Waiting for {cam_id}..."
                             status_color = (0, 100, 255)
-
                         (tw, _), _ = cv2.getTextSize(status_text, font, 0.7, 2)
                         cv2.putText(no_signal, status_text,
                                     (w_ns // 2 - tw // 2, h_ns // 2),
                                     font, 0.7, status_color, 2, cv2.LINE_AA)
-
-                        # Animated dots
-                        n_dots = int(time.time() * 2) % 4
-                        dots = "." * n_dots
-                        cv2.putText(no_signal, dots,
-                                    (w_ns // 2 + tw // 2, h_ns // 2),
-                                    font, 0.7, status_color, 2, cv2.LINE_AA)
-
-                        # Timestamp
                         ts = time.strftime("%H:%M:%S")
                         cv2.putText(no_signal, ts, (w_ns - 120, h_ns - 15),
                                     font, 0.5, (100, 100, 100), 1, cv2.LINE_AA)
-
                         cv2.imshow("SafeWatch Monitor", no_signal)
-                        key = cv2.waitKey(100) & 0xFF
+                        key = cv2.waitKey(30) & 0xFF
                         if key == ord('q'):
                             running = False
                     continue
 
                 frame_counters[cam_id] += 1
 
-                # Check frame skip
+                # Check frame skip — AI only runs every Nth frame
                 cam_config = next(
                     (c for c in config.get("cameras", []) if c["id"] == cam_id),
                     {}
                 )
-                frame_skip = cam_config.get("frame_skip", 5)
-                if frame_counters[cam_id] % frame_skip != 0:
-                    continue
+                frame_skip = cam_config.get("frame_skip", 3)
+                run_ai = (frame_counters[cam_id] % frame_skip == 0)
 
-                # 2. Person detection
-                persons = person_detector.detect(frame)
+                # ─── AI Processing (only every Nth frame) ─────────
+                if run_ai:
+                    persons = person_detector.detect(frame)
+                    poses = pose_estimator.estimate(frame, persons)
 
-                # 3. Pose estimation
-                poses = pose_estimator.estimate(frame, persons)
+                    timestamp = time.time()
+                    for pose in poses:
+                        velocity_tracker.update(pose.person_id, pose, timestamp)
+                    for pose in poses:
+                        action_classifier.update_buffer(pose.person_id, pose)
 
-                # Update velocity tracker
-                timestamp = time.time()
-                for pose in poses:
-                    velocity_tracker.update(pose.person_id, pose, timestamp)
+                    flow_result = None
+                    if cam_id in prev_frames and prev_frames[cam_id] is not None:
+                        flow_result = flow_analyzer.analyze(prev_frames[cam_id], frame)
+                    prev_frames[cam_id] = frame.copy()
 
-                # Update action classifier buffers
-                for pose in poses:
-                    action_classifier.update_buffer(pose.person_id, pose)
+                    frame_data = {
+                        "frame": frame,
+                        "camera_id": cam_id,
+                        "timestamp": timestamp,
+                        "persons": persons,
+                        "poses": poses,
+                        "flow_result": flow_result,
+                        "velocity_tracker": velocity_tracker,
+                    }
 
-                # 4. Optical flow
-                flow_result = None
-                if cam_id in prev_frames and prev_frames[cam_id] is not None:
-                    flow_result = flow_analyzer.analyze(prev_frames[cam_id], frame)
-                prev_frames[cam_id] = frame.copy()
+                    threat_report = threat_engine.analyze(frame_data)
 
-                # 5. Threat analysis
-                frame_data = {
-                    "frame": frame,
-                    "camera_id": cam_id,
-                    "timestamp": timestamp,
-                    "persons": persons,
-                    "poses": poses,
-                    "flow_result": flow_result,
-                    "velocity_tracker": velocity_tracker,
-                }
+                    if threat_report.threats_detected:
+                        alert_manager.process_threat_report(threat_report, frame)
 
-                threat_report = threat_engine.analyze(frame_data)
+                    # Cache AI results for display on non-AI frames
+                    cached_persons[cam_id] = persons
+                    cached_poses[cam_id] = poses
+                    cached_threat_report[cam_id] = threat_report
 
-                # 6. Process alerts
-                if threat_report.threats_detected:
-                    alert_manager.process_threat_report(threat_report, frame)
+                    # Update database (less frequently)
+                    stream = stream_manager.get_stream(cam_id)
+                    if stream:
+                        db_manager.update_camera_status(cam_id, {
+                            "status": "online" if stream.is_connected() else "offline",
+                            "fps": stream.get_fps(),
+                            "frames_processed": frame_counters[cam_id],
+                            "threats_today": 0,
+                        })
 
-                # 7. Update database
-                stream = stream_manager.get_stream(cam_id)
-                if stream:
-                    db_manager.update_camera_status(cam_id, {
-                        "status": "online" if stream.is_connected() else "offline",
-                        "fps": stream.get_fps(),
-                        "frames_processed": frame_counters[cam_id],
-                        "threats_today": 0,
-                    })
-
-                # ─── 8. Live Display ──────────────────────────────
+                # ─── Display (EVERY frame for smooth video) ───────
                 if show_display:
                     display = frame.copy()
 
-                    # Draw person bounding boxes
-                    display = person_detector.draw_detections(display, persons)
+                    # Use cached AI results (updated every Nth frame)
+                    persons = cached_persons.get(cam_id, [])
+                    poses = cached_poses.get(cam_id, [])
+                    threat_report = cached_threat_report.get(cam_id)
 
-                    # Draw pose skeletons
-                    display = pose_estimator.draw_skeleton(display, poses)
-
-                    # Draw threat overlays from the engine
-                    if threat_report.annotated_frame is not None:
-                        display = threat_report.annotated_frame.copy()
+                    # Draw AI overlays using cached results
+                    if persons:
                         display = person_detector.draw_detections(display, persons)
+                    if poses:
                         display = pose_estimator.draw_skeleton(display, poses)
-
-                    # Draw zones if available
                     display = zone_manager.draw_zones(display)
 
                     # ── HUD overlay ────────────────────────────────
                     h_disp, w_disp = display.shape[:2]
 
-                    # Calculate FPS
                     fps_frame_count += 1
                     elapsed = time.time() - fps_timer
                     if elapsed >= 1.0:
@@ -395,14 +377,13 @@ def main_loop(config: dict, show_display: bool = True):
                         fps_frame_count = 0
                         fps_timer = time.time()
 
-                    # Semi-transparent HUD bar at the top
+                    # Semi-transparent HUD bar
                     hud_h = 38
                     overlay = display.copy()
                     cv2.rectangle(overlay, (0, 0), (w_disp, hud_h), (20, 20, 20), -1)
                     cv2.addWeighted(overlay, 0.7, display, 0.3, 0, display)
 
-                    # HUD text
-                    risk = threat_report.overall_risk_level
+                    risk = threat_report.overall_risk_level if threat_report else "SAFE"
                     risk_colors = {
                         "SAFE": (0, 200, 0), "LOW": (0, 255, 255),
                         "MEDIUM": (0, 165, 255), "HIGH": (0, 0, 255),
@@ -430,8 +411,8 @@ def main_loop(config: dict, show_display: bool = True):
                                 font, 0.6, risk_col, 2, cv2.LINE_AA)
 
                     # Threat count bottom bar
-                    n_threats = len(threat_report.threats_detected)
-                    if n_threats > 0:
+                    if threat_report and threat_report.threats_detected:
+                        n_threats = len(threat_report.threats_detected)
                         bar_y = h_disp - 32
                         overlay2 = display.copy()
                         cv2.rectangle(overlay2, (0, bar_y), (w_disp, h_disp), (0, 0, 80), -1)
@@ -451,7 +432,7 @@ def main_loop(config: dict, show_display: bool = True):
             except Exception as e:
                 logger.error(f"[{cam_id}] Processing error: {e}")
 
-        # Handle display key events + small sleep
+        # Handle display key events
         if show_display:
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):

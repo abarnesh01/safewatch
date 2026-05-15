@@ -13,7 +13,9 @@ system:
 cameras:
   - id: "CAM-01"
     name: "Main Entrance"
-    source: 0
+    # DroidCam: Replace the IP below with your phone's IP from the DroidCam app
+    # For built-in webcam, change back to: source: 0
+    source: "http://100.115.50.164:4747/video"
     enabled: true
     zone_type: "entrance"
     agents: ["agent_main"]
