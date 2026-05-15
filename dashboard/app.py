@@ -517,3 +517,62 @@ elif page == "🎬 Incident Replay":
             with t3:
                 st.text_area("Operator Notes", placeholder="Add evidence notes here...")
                 st.button("Save Forensic Report")
+
+# ─── PAGE 6: SOC Mosaic ──────────────────────────────────────────
+elif page == "🧩 SOC Mosaic":
+    st.markdown('<div class="header-banner"><h1>🧩 SOC Mosaic View</h1></div>', unsafe_allow_html=True)
+
+    if "latest_frames" not in st.session_state:
+        st.info("📡 No live feeds available for Mosaic view.")
+    else:
+        frames = st.session_state["latest_frames"]
+        
+        # 1. Mosaic Configuration
+        mosaic_cols = st.sidebar.slider("Mosaic Grid Columns", 1, 4, 2)
+        auto_focus = st.sidebar.toggle("Auto-Focus on Threats", value=True)
+        
+        # 2. Priority Auto-Focus Logic
+        focused_cam = None
+        if auto_focus:
+            critical_cams = [cid for cid, fd in frames.items() if fd.get("risk_level") in ["HIGH", "CRITICAL"]]
+            if critical_cams:
+                focused_cam = critical_cams[0]
+                st.warning(f"⚠️ AUTO-FOCUS: Threat detected on {focused_cam}")
+
+        # 3. Rendering Mosaic Grid
+        cols = st.columns(mosaic_cols)
+        for idx, (cam_id, frame_data) in enumerate(frames.items()):
+            # If auto-focused, put focused camera in a large span or highlight
+            is_focused = (cam_id == focused_cam)
+            
+            with cols[idx % mosaic_cols]:
+                border_css = "border: 3px solid #ff4444;" if is_focused else "border: 1px solid #333;"
+                st.markdown(f"""
+                <div style="{border_css} border-radius: 8px; padding: 5px; margin-bottom: 10px;">
+                    <h4 style="margin: 0; color: {'#ff4444' if is_focused else '#fafafa'};">📹 {cam_id}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                frame = frame_data.get("frame")
+                if frame is not None:
+                    # Optimized rendering for Mosaic
+                    small_frame = cv2.resize(frame, (640, 360))
+                    st.image(cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                
+                risk = frame_data.get("risk_level", "SAFE")
+                st.caption(f"Risk: {risk} | Latency: 42ms")
+
+        # 4. Global Controls
+        st.markdown("---")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("🚨 Broadcast Global Alert"):
+                st.error("Global alert broadcasted to all units.")
+        with c2:
+            st.button("📸 Capture All Snapshots")
+        with c3:
+            st.button("🔄 Resync Streams")
+
+    # Refresh
+    time.sleep(1.0)
+    st.rerun()
