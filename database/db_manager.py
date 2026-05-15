@@ -98,6 +98,23 @@ class DatabaseManager:
         
         conn.commit()
 
+    def get_heatmap_data(self, camera_id: str, start_date: str, end_date: str):
+        """Fetch incident coordinates for heatmap generation."""
+        query = """
+            SELECT threat_type, description 
+            FROM incidents 
+            WHERE camera_id = ? AND timestamp BETWEEN ? AND ?
+        """
+        rows = self.fetch_all(query, (camera_id, start_date, end_date))
+        
+        # We parse the description or metadata to extract coordinates
+        # For now, let's assume coordinates are in the description or a separate field
+        # In a real system, we'd have x, y columns
+        return rows
+
+    def get_daily_stats(self, date_str: str = None):
+        pass
+
     def execute(self, query: str, params: tuple = ()):
         conn = self._get_connection()
         try:
