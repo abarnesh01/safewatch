@@ -94,6 +94,27 @@ class ThreatEngine:
     def __repr__(self) -> str:
         return f"ThreatEngine(detectors=9, smoothing={self._smoothing_frames})"
 
+    def _init_detectors(self):
+        """Initialize detectors into the modular registry."""
+        config = self._config
+        zone_manager = self._zone_manager # Assumes passed in or None
+        
+        self._detectors = {
+            "fight": FightDetector(config),
+            "fall": FallDetector(config),
+            "harassment": HarassmentDetector(config),
+            "assault": AssaultDetector(config),
+            "unconscious": UnconsciousDetector(config),
+            "trespass": TrespassDetector(config, zone_manager),
+            "crowd_panic": CrowdPanicDetector(config),
+            "accident": AccidentDetector(config),
+            "abuse": AbuseDetector(config)
+        }
+        logger.info(f"ThreatEngine Registry initialized with {len(self._detectors)} modular detectors.")
+
+    def _get_detector(self, name: str):
+        return self._detectors.get(name)
+
     def analyze(self, frame_data: dict) -> ThreatReport:
         """
         Analyze a frame for threats with temporal confidence smoothing.
@@ -122,29 +143,19 @@ class ThreatEngine:
                     if len(self._profiler[name]) > 100: self._profiler[name].pop(0)
                 return res
 
-            futures["fight"] = self._executor.submit(
-                profiled_run, "fight", self._fight_detector.detect, persons, poses, velocity_tracker
-            )
-            futures["fall"] = self._executor.submit(
-                profiled_run, "fall", self._fall_detector.detect, persons, poses, velocity_tracker
-            )
-            futures["harassment"] = self._executor.submit(
-                profiled_run, "harassment", self._harassment_detector.detect, persons, poses, velocity_tracker
-            )
-            futures["assault"] = self._executor.submit(
-                profiled_run, "assault", self._assault_detector.detect, persons, poses, velocity_tracker
-            )
-            futures["unconscious"] = self._executor.submit(
-                profiled_run, "unconscious", self._unconscious_detector.detect, persons, poses, velocity_tracker
-            )
-            futures["abuse"] = self._executor.submit(
-                profiled_run, "abuse", self._abuse_detector.detect, persons, poses, velocity_tracker
-            )
+            for name in ["fight", "fall", "harassment", "assault", "unconscious", "abuse"]:
+                detector = self._get_detector(name)
+                if detector:
+                    futures[name] = self._executor.submit(
+                        profiled_run, name, detector.detect, persons, poses, velocity_tracker
+                    )
 
         if persons:
-            futures["trespass"] = self._executor.submit(
-                self._trespass_detector.detect, persons
-            )
+            trespass_detector = self._get_detector("trespass")
+            if trespass_detector:
+                futures["trespass"] = self._executor.submit(
+                    trespass_detector.detect, persons
+                )
 
         fall_events = []
         for name, future in futures.items():
