@@ -7,6 +7,8 @@ import asyncio
 import signal
 import sys
 import yaml
+import time
+import psutil
 from pathlib import Path
 from loguru import logger
 
@@ -122,6 +124,7 @@ class SafeWatchApp:
                         continue
                     
                     # 1. AI Pipeline
+                    start_time = time.time()
                     persons = self._person_detector.detect(frame_packet.frame)
                     
                     poses = {}
@@ -131,8 +134,13 @@ class SafeWatchApp:
                             poses[p.person_id] = pose
                     
                     flow = self._flow_analyzer.analyze(frame_packet.frame)
+                    latency = (time.time() - start_time) * 1000
                     
-                    # 2. Threat Detection
+                    # 2. Update Telemetry
+                    self._update_telemetry(cam_id, latency)
+                    
+                    # 3. Threat Detection
+                    # ... (rest of the loop)
                     events = self._threat_engine.process_frame_data(
                         cam_id, persons, poses, flow
                     )
