@@ -95,5 +95,28 @@ python training/export_onnx.py
 - **Thread Safety**: Multithreaded capture and analysis with synchronized logging.
 - **Scalability**: Modular detector design allows adding new threat models seamlessly.
 
+## 🔄 Safe Git Synchronization Workflow
+
+To support continuous enterprise development and high-frequency commit cycles, follow the **SAFE** synchronization loop:
+
+1. **Clean Workspace**: Ensure your working tree is clean.
+2. **Isolated Commit**: Make small, meaningful production improvements.
+   ```bash
+   git add -A
+   git commit -m "feat: isolated subsystem update"
+   ```
+3. **Rebase Sync**: Synchronize with the remote branch using rebase to maintain linear history.
+   ```bash
+   git fetch origin
+   git rebase origin/Prasanth
+   ```
+4. **Immediate Push**: Push changes immediately after synchronization.
+   ```bash
+   git push origin Prasanth
+   ```
+
+> [!CAUTION]
+> NEVER use `git pull` without `--rebase` on active development branches. ALWAYS ensure your tree is clean before rebasing.
+
 ## 📄 License
 Enterprise Proprietary - © 2026 SafeWatch AI Global Systems.
