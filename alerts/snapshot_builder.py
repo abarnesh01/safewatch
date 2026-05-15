@@ -36,6 +36,7 @@ class SnapshotBuilder:
         camera_id: str,
         timestamp: float,
         camera_name: str = "",
+        jpeg_quality: int = 85,
     ) -> bytes:
         """
         Build an annotated snapshot image.
@@ -135,7 +136,7 @@ class SnapshotBuilder:
         )
 
         # Encode as JPEG
-        success, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        success, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
         if not success:
             logger.error("Failed to encode snapshot as JPEG")
             return b""
