@@ -59,13 +59,24 @@ class DatasetPrep:
         return f"DatasetPrep(raw='{self._raw_dir}', output='{self._output_dir}')"
 
     def _init_pose(self):
-        """Initialize MediaPipe pose estimator."""
+        """Initialize MediaPipe pose estimator using the Tasks API."""
         if MP_AVAILABLE and self._pose_estimator is None:
-            self._pose_estimator = mp.solutions.pose.Pose(
-                static_image_mode=True,
-                model_complexity=1,
-                min_detection_confidence=0.5,
+            model_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                "models", "pose_landmarker_lite.task",
             )
+            if not os.path.isfile(model_path):
+                print(f"  ⚠️ Pose model not found at {model_path}")
+                return
+            base_options = mp.tasks.BaseOptions(model_asset_path=model_path)
+            options = mp.tasks.vision.PoseLandmarkerOptions(
+                base_options=base_options,
+                running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                num_poses=1,
+                min_pose_detection_confidence=0.5,
+                min_pose_presence_confidence=0.5,
+            )
+            self._pose_estimator = mp.tasks.vision.PoseLandmarker.create_from_options(options)
 
     def extract_frames(self, video_path: str, output_dir: str, max_frames: int = 60) -> list[str]:
         """
@@ -137,14 +148,16 @@ class DatasetPrep:
             return None
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        result = self._pose_estimator.process(rgb)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = self._pose_estimator.detect(mp_image)
 
-        if result.pose_landmarks is None:
+        if not result.pose_landmarks:
             return None
 
         landmarks = []
-        for lm in result.pose_landmarks.landmark:
-            landmarks.extend([lm.x, lm.y, lm.visibility])
+        for lm in result.pose_landmarks[0]:
+            vis = lm.visibility if hasattr(lm, 'visibility') else 1.0
+            landmarks.extend([lm.x, lm.y, vis])
 
         return np.array(landmarks, dtype=np.float32)
 
