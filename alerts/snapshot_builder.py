@@ -136,13 +136,12 @@ class SnapshotBuilder:
         return buffer.tobytes()
 
         return buffer.tobytes()
-
     def save_snapshot(
         self,
         image_bytes: bytes,
         camera_id: str,
         timestamp: float,
-        output_dir: str = "recordings",
+        output_dir: str = None,
     ) -> str:
         """
         Save snapshot bytes to disk.
@@ -156,7 +155,7 @@ class SnapshotBuilder:
         Returns:
             Path to saved file
         """
-        out_dir = Path(output_dir)
+        out_dir = Path(output_dir) if output_dir else RuntimePath.SNAPSHOTS
         out_dir.mkdir(parents=True, exist_ok=True)
 
         dt = datetime.fromtimestamp(timestamp)

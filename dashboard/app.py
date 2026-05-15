@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from database.db_manager import DatabaseManager
 from database.incident_logger import IncidentLogger
+from utils.runtime_isolation import RuntimePath
 
 
 # ─── Page Config ──────────────────────────────────────────────────
@@ -79,7 +80,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Quick Stats")
 
-    db_path = Path("logs/safewatch.db")
+    db_path = RuntimePath.LOGS / "safewatch.db"
     if db_path.exists():
         db = DatabaseManager(str(db_path))
         stats = db.get_daily_stats()
@@ -197,7 +198,7 @@ elif page == "📋 Incident History":
 
         # Export button
         if incidents:
-            csv_path = f"logs/export_{filter_date}.csv"
+            csv_path = RuntimePath.LOGS / f"export_{filter_date}.csv"
             if st.button("📥 Export to CSV"):
                 path = incident_logger.export_csv(
                     kwargs["start_date"], kwargs["end_date"], csv_path
