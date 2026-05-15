@@ -4,6 +4,7 @@ Smart frame sampling with motion detection and adaptive skip rates.
 """
 
 import time
+from collections import deque
 from typing import Optional, Generator
 
 import cv2
