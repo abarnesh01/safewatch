@@ -95,38 +95,43 @@ with st.sidebar:
 if page == "🖥️ Live Monitor":
     st.markdown('<div class="header-banner"><h1>🖥️ Live Monitor</h1></div>', unsafe_allow_html=True)
 
-    col_opts = st.columns(4)
+    col_opts = st.columns(5)
     with col_opts[0]:
-        show_skeleton = st.checkbox("Show Skeleton", value=True, key="show_skeleton")
+        refresh_rate = st.selectbox("Refresh Rate", ["Fast (500ms)", "Medium (1s)", "Slow (2s)", "Paused"], index=0)
     with col_opts[1]:
-        show_bboxes = st.checkbox("Show Boxes", value=True, key="show_bboxes")
+        preview_mode = st.toggle("Low Bandwidth", value=False, help="Reduces frame resolution for faster loading")
     with col_opts[2]:
-        show_zones = st.checkbox("Show Zones", value=True, key="show_zones")
+        show_skeleton = st.toggle("Skeletons", value=True)
     with col_opts[3]:
-        show_overlay = st.checkbox("Show Threats", value=True, key="show_overlay")
+        show_bboxes = st.toggle("Boxes", value=True)
+    with col_opts[4]:
+        show_overlay = st.toggle("Threats", value=True)
 
     # Shared state from main.py
     if "latest_frames" in st.session_state:
         frames = st.session_state["latest_frames"]
         cols = st.columns(min(len(frames), 2))
+        
         for idx, (cam_id, frame_data) in enumerate(frames.items()):
             with cols[idx % 2]:
                 st.markdown(f"### 📹 {cam_id}")
                 frame = frame_data.get("frame")
-                risk = frame_data.get("risk_level", "SAFE")
-
-                risk_colors = {
-                    "SAFE": "🟢", "LOW": "🟡", "MEDIUM": "🟠",
-                    "HIGH": "🔴", "CRITICAL": "🟣",
-                }
-                st.markdown(f"**Status:** {risk_colors.get(risk, '⚪')} {risk}")
-
+                
+                # 1. Dashboard Optimization: Throttled Frame Processing
                 if frame is not None:
+                    # Low bandwidth / Preview mode: resize frame
+                    if preview_mode:
+                        frame = cv2.resize(frame, (480, 270))
+                    
                     st.image(
                         cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
                         channels="RGB",
                         use_container_width=True,
                     )
+
+                risk = frame_data.get("risk_level", "SAFE")
+                risk_colors = {"SAFE": "🟢", "LOW": "🟡", "MEDIUM": "🟠", "HIGH": "🔴", "CRITICAL": "🟣"}
+                st.markdown(f"**Status:** {risk_colors.get(risk, '⚪')} {risk}")
 
                 threats = frame_data.get("threats", [])
                 if threats:
@@ -140,44 +145,13 @@ if page == "🖥️ Live Monitor":
                             unsafe_allow_html=True,
                         )
     else:
-        st.info(
-            "📡 No live feed available. Start SafeWatch with `python main.py` "
-            "to begin monitoring."
-        )
+        st.info("📡 No live feed available. Start SafeWatch with `python main.py` to begin monitoring.")
 
-        # Show placeholder with camera status from DB
-        if db is not None:
-            cameras = db.get_camera_status()
-            if cameras:
-                st.markdown("### Camera Status")
-                for cam in cameras:
-                    status_icon = "🟢" if cam["status"] == "online" else "🔴"
-                    st.markdown(
-                        f"{status_icon} **{cam['camera_id']}** — "
-                        f"FPS: {cam.get('fps', 0):.1f} | "
-                        f"Frames: {cam.get('frames_processed', 0)} | "
-                        f"Threats Today: {cam.get('threats_today', 0)}"
-                    )
-
-    # Active alerts sidebar
-    st.markdown("---")
-    st.markdown("### 🚨 Active Alerts")
-    if "active_alerts" in st.session_state:
-        for alert in st.session_state["active_alerts"]:
-            severity = alert.get("severity", "LOW")
-            age = time.time() - alert.get("time", 0)
-            age_str = f"{int(age)}s ago" if age < 60 else f"{int(age/60)}m ago"
-            st.warning(
-                f"**{alert.get('threat_type', '?')}** on {alert.get('camera_id', '?')} "
-                f"({severity}) — {age_str}"
-            )
-    else:
-        st.success("No active alerts")
-
-    # Auto-refresh
-    refresh_ms = 500
-    time.sleep(refresh_ms / 1000)
-    st.rerun()
+    # Auto-refresh logic
+    if refresh_rate != "Paused":
+        refresh_map = {"Fast (500ms)": 0.5, "Medium (1s)": 1.0, "Slow (2s)": 2.0}
+        time.sleep(refresh_map[refresh_rate])
+        st.rerun()
 
 
 # ─── PAGE 2: Incident History ────────────────────────────────────
