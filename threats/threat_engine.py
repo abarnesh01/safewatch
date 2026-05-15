@@ -69,16 +69,9 @@ class ThreatEngine:
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=4)
 
-        # Instantiate all detectors
-        self._fight_detector = FightDetector(config)
-        self._fall_detector = FallDetector(config)
-        self._harassment_detector = HarassmentDetector(config)
-        self._assault_detector = AssaultDetector(config)
-        self._unconscious_detector = UnconsciousDetector(config)
-        self._trespass_detector = TrespassDetector(config, zone_manager)
-        self._crowd_panic_detector = CrowdPanicDetector(config)
-        self._accident_detector = AccidentDetector(config)
-        self._abuse_detector = AbuseDetector(config)
+        # Modular Detector Registry
+        self._detectors = {}
+        self._init_detectors()
 
         # Per-threat cooldown tracking
         self._cooldowns: dict[str, float] = defaultdict(float)
