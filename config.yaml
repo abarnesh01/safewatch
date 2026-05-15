@@ -20,8 +20,8 @@ cameras:
     zone_type: "entrance"
     agents: ["agent_main"]
     resolution: [640, 480]
-    fps_target: 15
-    frame_skip: 5
+    fps_target: 30
+    frame_skip: 3
     record_on_threat: true
     recording_seconds_before: 5
     recording_seconds_after: 10
