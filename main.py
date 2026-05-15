@@ -151,7 +151,7 @@ def run_dashboard(config: dict):
     return proc
 
 
-def main_loop(config: dict):
+def main_loop(config: dict, show_display: bool = True):
     """Main processing loop."""
 
     # Import components
@@ -228,6 +228,15 @@ def main_loop(config: dict):
 
     logger.info("🚀 SafeWatch is now running!")
     logger.info("Press Ctrl+C to stop.")
+
+    # ─── Live Display Setup ───────────────────────────────────────
+    if show_display:
+        cv2.namedWindow("SafeWatch Monitor", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("SafeWatch Monitor", 960, 540)
+        logger.info("📺 Live monitor window opened — press 'q' to quit")
+    display_fps = 0.0
+    fps_timer = time.time()
+    fps_frame_count = 0
 
     # ─── Graceful Shutdown Handler ────────────────────────────────
     running = True
@@ -394,6 +403,10 @@ def main():
         "--dashboard-only", action="store_true",
         help="Start only the Streamlit dashboard",
     )
+    parser.add_argument(
+        "--no-display", action="store_true",
+        help="Run headless without the live monitor window",
+    )
 
     args = parser.parse_args()
 
@@ -430,7 +443,7 @@ def main():
         return
 
     # Run the main system
-    main_loop(config)
+    main_loop(config, show_display=not args.no_display)
 
 
 if __name__ == "__main__":
