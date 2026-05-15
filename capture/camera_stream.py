@@ -44,6 +44,7 @@ class CameraStream:
         self._fps_timer = time.time()
         self._last_frame_time = 0.0
         self._reconnect_delay = 5.0
+        self._last_read_frame: Optional[np.ndarray] = None
         logger.info(f"CameraStream created: id={camera_id} source={source} name={name}")
 
     def __repr__(self) -> str:
@@ -218,7 +219,9 @@ class CameraStream:
                 frame = self._buffer.get_nowait()
         except Empty:
             pass
-        return frame
+        if frame is not None:
+            self._last_read_frame = frame
+        return self._last_read_frame
 
     def get_fps(self) -> float:
         """Get the current frames per second rate."""
