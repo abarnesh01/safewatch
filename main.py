@@ -10,6 +10,7 @@ import signal
 import argparse
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -261,6 +262,56 @@ def main_loop(config: dict, show_display: bool = True):
     cached_poses: dict[str, list] = {cam_id: [] for cam_id in camera_ids}
     cached_threat_report: dict[str, any] = {}
 
+    ai_executor = ThreadPoolExecutor(max_workers=max(1, len(camera_ids)))
+    ai_futures = {cam_id: None for cam_id in camera_ids}
+
+    def process_ai_task(frame_copy, c_id, ts):
+        try:
+            persons = person_detector.detect(frame_copy)
+            poses = pose_estimator.estimate(frame_copy, persons)
+
+            for pose in poses:
+                velocity_tracker.update(pose.person_id, pose, ts)
+            for pose in poses:
+                action_classifier.update_buffer(pose.person_id, pose)
+
+            flow_result = None
+            if c_id in prev_frames and prev_frames[c_id] is not None:
+                flow_result = flow_analyzer.analyze(prev_frames[c_id], frame_copy)
+            prev_frames[c_id] = frame_copy.copy()
+
+            frame_data = {
+                "frame": frame_copy,
+                "camera_id": c_id,
+                "timestamp": ts,
+                "persons": persons,
+                "poses": poses,
+                "flow_result": flow_result,
+                "velocity_tracker": velocity_tracker,
+            }
+
+            threat_report = threat_engine.analyze(frame_data)
+
+            if threat_report.threats_detected:
+                alert_manager.process_threat_report(threat_report, frame_copy)
+
+            # Cache AI results for display on non-AI frames
+            cached_persons[c_id] = persons
+            cached_poses[c_id] = poses
+            cached_threat_report[c_id] = threat_report
+
+            # Update database (less frequently)
+            stream = stream_manager.get_stream(c_id)
+            if stream:
+                db_manager.update_camera_status(c_id, {
+                    "status": "online" if stream.is_connected() else "offline",
+                    "fps": stream.get_fps(),
+                    "frames_processed": frame_counters[c_id],
+                    "threats_today": 0,
+                })
+        except Exception as e:
+            logger.error(f"[{c_id}] AI Task error: {e}")
+
     while running:
         for cam_id in camera_ids:
             try:
@@ -305,51 +356,11 @@ def main_loop(config: dict, show_display: bool = True):
                 frame_skip = cam_config.get("frame_skip", 3)
                 run_ai = (frame_counters[cam_id] % frame_skip == 0)
 
-                # ─── AI Processing (only every Nth frame) ─────────
+                # ─── AI Processing (Background) ─────────
                 if run_ai:
-                    persons = person_detector.detect(frame)
-                    poses = pose_estimator.estimate(frame, persons)
-
-                    timestamp = time.time()
-                    for pose in poses:
-                        velocity_tracker.update(pose.person_id, pose, timestamp)
-                    for pose in poses:
-                        action_classifier.update_buffer(pose.person_id, pose)
-
-                    flow_result = None
-                    if cam_id in prev_frames and prev_frames[cam_id] is not None:
-                        flow_result = flow_analyzer.analyze(prev_frames[cam_id], frame)
-                    prev_frames[cam_id] = frame.copy()
-
-                    frame_data = {
-                        "frame": frame,
-                        "camera_id": cam_id,
-                        "timestamp": timestamp,
-                        "persons": persons,
-                        "poses": poses,
-                        "flow_result": flow_result,
-                        "velocity_tracker": velocity_tracker,
-                    }
-
-                    threat_report = threat_engine.analyze(frame_data)
-
-                    if threat_report.threats_detected:
-                        alert_manager.process_threat_report(threat_report, frame)
-
-                    # Cache AI results for display on non-AI frames
-                    cached_persons[cam_id] = persons
-                    cached_poses[cam_id] = poses
-                    cached_threat_report[cam_id] = threat_report
-
-                    # Update database (less frequently)
-                    stream = stream_manager.get_stream(cam_id)
-                    if stream:
-                        db_manager.update_camera_status(cam_id, {
-                            "status": "online" if stream.is_connected() else "offline",
-                            "fps": stream.get_fps(),
-                            "frames_processed": frame_counters[cam_id],
-                            "threats_today": 0,
-                        })
+                    future = ai_futures[cam_id]
+                    if future is None or future.done():
+                        ai_futures[cam_id] = ai_executor.submit(process_ai_task, frame.copy(), cam_id, time.time())
 
                 # ─── Display (EVERY frame for smooth video) ───────
                 if show_display:
