@@ -75,11 +75,22 @@ class CameraStream:
                 self._connected = False
                 return False
 
+            # Use MJPG codec for USB webcams — prevents V4L2 YUYV timeout
+            if isinstance(self._source, int):
+                self._capture.set(
+                    cv2.CAP_PROP_FOURCC,
+                    cv2.VideoWriter.fourcc('M', 'J', 'P', 'G'),
+                )
+
             self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, self._resolution[0])
             self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self._resolution[1])
 
             if isinstance(self._source, int):
                 self._capture.set(cv2.CAP_PROP_FPS, self._fps_target)
+
+            # Warm-up: let the camera sensor stabilize
+            import time as _time
+            _time.sleep(0.5)
 
             self._connected = True
             logger.info(f"[{self._camera_id}] Camera opened successfully: {self._source}")
