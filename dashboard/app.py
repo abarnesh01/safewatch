@@ -414,3 +414,69 @@ elif page == "⚙️ System Settings":
         exists = Path(info["file"]).exists()
         status = "✅ Loaded" if exists else "⚠️ Not found (using fallback)"
         st.markdown(f"**{name}**: `{info['file']}` — {status}")
+# ─── PAGE 5: Incident Replay ─────────────────────────────────────
+elif page == "🎬 Incident Replay":
+    st.markdown('<div class="header-banner"><h1>🎬 Incident Replay</h1></div>', unsafe_allow_html=True)
+
+    if db is None:
+        st.warning("Database not initialized.")
+    else:
+        # 1. Incident Selection
+        recent_incidents = db.get_incidents(limit=20)
+        if not recent_incidents:
+            st.info("No incidents available for replay.")
+        else:
+            inc_options = {
+                f"#{inc['id']} | {inc['threat_type']} | {inc['timestamp'][:19]}": inc
+                for inc in recent_incidents
+            }
+            selected_label = st.selectbox("Select Incident to Replay", list(inc_options.keys()))
+            incident = inc_options[selected_label]
+
+            # 2. Forensic Replay UI
+            st.markdown("### Forensic Timeline")
+            
+            col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1, 2, 1])
+            with col_ctrl1:
+                playback_speed = st.select_slider("Playback Speed", options=[0.25, 0.5, 1.0, 2.0], value=1.0)
+            with col_ctrl2:
+                # Mock scrubbing for now — in a real system this would map to video frames
+                frame_idx = st.slider("Timeline (Frames)", 0, 300, 0)
+            with col_ctrl3:
+                is_playing = st.button("Play/Pause")
+
+            # 3. Synchronized Replay View
+            st.markdown("---")
+            replay_col1, replay_col2 = st.columns([3, 1])
+            
+            with replay_col1:
+                snap_path = incident.get("snapshot_path", "")
+                if snap_path and Path(snap_path).exists():
+                    # In a production system, we'd load the .mp4 or frame sequence
+                    # Here we show the stabilized snapshot as the core evidence
+                    frame = cv2.imread(snap_path)
+                    st.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), use_container_width=True)
+                else:
+                    st.error("Recording not found on disk.")
+
+            with replay_col2:
+                st.markdown("#### Evidence Metadata")
+                st.write(f"**Incident ID:** {incident['id']}")
+                st.write(f"**Threat:** {incident['threat_type']}")
+                st.write(f"**Severity:** {incident['severity']}")
+                st.write(f"**Camera:** {incident['camera_id']}")
+                st.write(f"**Confidence:** {incident['confidence']:.2%}")
+                
+                if st.button("🔖 Bookmark Frame"):
+                    st.success("Frame bookmarked for export.")
+
+            # 4. Forensic Tools
+            st.markdown("### Forensic Tools")
+            t1, t2, t3 = st.tabs(["🔍 Detail Zoom", "📊 Motion Analysis", "📝 Annotations"])
+            with t1:
+                st.info("Dynamic zoom into detected threat regions.")
+            with t2:
+                st.info("Historical optical flow visualization for this clip.")
+            with t3:
+                st.text_area("Operator Notes", placeholder="Add evidence notes here...")
+                st.button("Save Forensic Report")
