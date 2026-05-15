@@ -26,6 +26,7 @@ class CameraStream:
         resolution: tuple[int, int] = (640, 480),
         fps_target: int = 15,
         buffer_size: int = 128,
+        reconnect_delay: float = 5.0,
         name: str = "Camera",
     ):
         self._camera_id = camera_id
@@ -43,7 +44,7 @@ class CameraStream:
         self._frame_count = 0
         self._fps_timer = time.time()
         self._last_frame_time = 0.0
-        self._reconnect_delay = 5.0
+        self._reconnect_delay = reconnect_delay
         self._last_read_frame: Optional[np.ndarray] = None
         logger.info(f"CameraStream created: id={camera_id} source={source} name={name}")
 
