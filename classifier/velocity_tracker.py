@@ -113,7 +113,7 @@ class VelocityTracker:
             return float(np.mean(velocities)) if velocities else 0.0
 
     def _compute_instant_velocity(self, curr: dict, prev: dict, joint_name: str) -> float:
-        """Helper to compute velocity between two frames."""
+        """Helper to compute velocity between two frames with outlier capping."""
         curr_kp = curr["keypoints"].get(joint_name)
         prev_kp = prev["keypoints"].get(joint_name)
 
@@ -127,8 +127,10 @@ class VelocityTracker:
         dx = curr_kp["abs_x"] - prev_kp["abs_x"]
         dy = curr_kp["abs_y"] - prev_kp["abs_y"]
         distance = np.sqrt(dx**2 + dy**2)
-
-        return float(distance / dt)
+        velocity = distance / dt
+        
+        # Cap velocity at 1000 px/s (prevents tracking glitches from ruining analysis)
+        return float(min(1000.0, velocity))
 
     def get_acceleration(self, person_id: int, joint_name: str) -> float:
         """
