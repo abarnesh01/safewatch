@@ -84,28 +84,23 @@ class ThreatEngine:
         self._cooldowns: dict[str, float] = defaultdict(float)
         self._cooldown_seconds = config.get("telegram", {}).get("alert_cooldown_seconds", 30)
 
-        logger.info("ThreatEngine initialized with all detectors")
+        # Temporal smoothing state
+        threat_cfg = config.get("threats", {})
+        self._smoothing_frames = threat_cfg.get("smoothing_frames", 5)
+        self._confirmation_frames = threat_cfg.get("confirmation_frames", 3)
+        self._threat_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=self._smoothing_frames))
+
+        logger.info(
+            f"ThreatEngine initialized with temporal smoothing "
+            f"(frames={self._smoothing_frames}, confirmation={self._confirmation_frames})"
+        )
 
     def __repr__(self) -> str:
-        return "ThreatEngine(detectors=9)"
+        return f"ThreatEngine(detectors=9, smoothing={self._smoothing_frames})"
 
     def analyze(self, frame_data: dict) -> ThreatReport:
         """
-        Analyze a frame for threats using all enabled detectors.
-
-        Args:
-            frame_data: Dict with keys:
-                - frame: np.ndarray (BGR image)
-                - camera_id: str
-                - timestamp: float
-                - persons: list[Person]
-                - poses: list[PoseResult]
-                - flow_result: FlowResult
-                - zones: ZoneManager (optional)
-                - velocity_tracker: VelocityTracker
-
-        Returns:
-            ThreatReport with all detected threats and annotated frame
+        Analyze a frame for threats with temporal confidence smoothing.
         """
         frame = frame_data.get("frame")
         camera_id = frame_data.get("camera_id", "UNKNOWN")
@@ -115,12 +110,11 @@ class ThreatEngine:
         flow_result = frame_data.get("flow_result")
         velocity_tracker = frame_data.get("velocity_tracker")
 
-        all_threats: list[ThreatEvent] = []
+        raw_threats: list[ThreatEvent] = []
 
         # Run detectors in parallel using thread pool
         futures = {}
 
-        # Fight, fall, harassment, assault, unconscious, abuse — need persons+poses+velocity
         if persons and poses and velocity_tracker:
             futures["fight"] = self._executor.submit(
                 self._fight_detector.detect, persons, poses, velocity_tracker
@@ -141,78 +135,107 @@ class ThreatEngine:
                 self._abuse_detector.detect, persons, poses, velocity_tracker
             )
 
-        # Trespass — needs persons + zones
         if persons:
             futures["trespass"] = self._executor.submit(
                 self._trespass_detector.detect, persons
             )
 
-        # Collect results, especially fall events for cross-detector use
         fall_events = []
-        detector_results: dict[str, list] = {}
-        
-        global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
-
         for name, future in futures.items():
             try:
                 result = future.result(timeout=2.0)
-                # Apply global confidence filter
-                result = [t for t in result if t.confidence >= global_min_conf]
-                
-                detector_results[name] = result
                 if name == "fall":
                     fall_events = result
-                all_threats.extend(result)
+                raw_threats.extend(result)
             except Exception as e:
                 logger.error(f"Detector '{name}' failed: {e}")
-                detector_results[name] = []
 
-        # Crowd panic and accident need fall_events from above
         if flow_result is not None and velocity_tracker is not None:
             try:
-                panic_events = self._crowd_panic_detector.detect(
+                raw_threats.extend(self._crowd_panic_detector.detect(
                     persons, flow_result, velocity_tracker, fall_events
-                )
-                panic_events = [t for t in panic_events if t.confidence >= global_min_conf]
-                all_threats.extend(panic_events)
+                ))
             except Exception as e:
                 logger.error(f"CrowdPanicDetector failed: {e}")
 
         if velocity_tracker is not None:
             try:
-                accident_events = self._accident_detector.detect(
+                raw_threats.extend(self._accident_detector.detect(
                     persons, poses, flow_result, velocity_tracker, fall_events
-                )
-                accident_events = [t for t in accident_events if t.confidence >= global_min_conf]
-                all_threats.extend(accident_events)
+                ))
             except Exception as e:
                 logger.error(f"AccidentDetector failed: {e}")
 
-        # Apply cooldown filtering
-        filtered_threats = self._apply_cooldowns(all_threats, camera_id, timestamp)
+        # 1. Apply temporal smoothing and confirmation
+        stabilized_threats = self._stabilize_threats(raw_threats, camera_id)
 
-        # Set timestamps on threats
+        # 2. Apply global confidence filter
+        global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
+        filtered_threats = [t for t in stabilized_threats if t.confidence >= global_min_conf]
+
+        # 3. Apply cooldown filtering
+        alertable_threats = self._apply_cooldowns(filtered_threats, camera_id, timestamp)
+
+        # Set timestamps
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
-        for threat in filtered_threats:
+        for threat in alertable_threats:
             threat.timestamp = ts_str
 
-        # Calculate overall risk level
-        risk_level = self.get_risk_level(filtered_threats)
+        risk_level = self.get_risk_level(alertable_threats)
 
-        # Draw threat overlays on frame
         annotated = None
         if frame is not None:
             annotated = self._draw_threat_overlays(
-                frame.copy(), filtered_threats, risk_level
+                frame.copy(), alertable_threats, risk_level
             )
 
         return ThreatReport(
             camera_id=camera_id,
             timestamp=timestamp,
-            threats_detected=filtered_threats,
+            threats_detected=alertable_threats,
             annotated_frame=annotated,
             overall_risk_level=risk_level,
         )
+
+    def _stabilize_threats(self, threats: list[ThreatEvent], camera_id: str) -> list[ThreatEvent]:
+        """Apply rolling averaging and multi-frame confirmation."""
+        stabilized = []
+        current_types = {t.threat_type for t in threats}
+
+        with self._lock:
+            # Update history for each threat type
+            for threat in threats:
+                key = f"{camera_id}:{threat.threat_type}"
+                self._threat_history[key].append(threat.confidence)
+
+            # Check all tracked threats
+            active_keys = [k for k in self._threat_history if k.startswith(f"{camera_id}:")]
+            for key in active_keys:
+                threat_type = key.split(":")[1]
+                history = self._threat_history[key]
+                
+                if len(history) < self._confirmation_frames:
+                    continue
+                
+                # Multi-frame confirmation: must have enough recent detections
+                recent_detections = sum(1 for conf in list(history)[-self._confirmation_frames:] if conf > 0)
+                if recent_detections < self._confirmation_frames:
+                    # Decay if not detected in latest frame
+                    if threat_type not in current_types:
+                        history.append(0.0)
+                    continue
+
+                # Rolling confidence average
+                avg_confidence = sum(history) / len(history)
+                
+                if avg_confidence > 0:
+                    # Find the original threat object to preserve metadata
+                    original = next((t for t in threats if t.threat_type == threat_type), None)
+                    if original:
+                        original.confidence = round(avg_confidence, 3)
+                        stabilized.append(original)
+
+        return stabilized
 
     def _apply_cooldowns(
         self,
@@ -220,13 +243,19 @@ class ThreatEngine:
         camera_id: str,
         timestamp: float,
     ) -> list[ThreatEvent]:
-        """Filter threats that are within cooldown period."""
+        """Filter threats that are within cooldown period, while allowing CRITICAL bypass."""
         filtered = []
         with self._lock:
             for threat in threats:
                 key = f"{camera_id}:{threat.threat_type}"
                 last_time = self._cooldowns.get(key, 0)
-                if timestamp - last_time >= self._cooldown_seconds:
+                
+                # Critical threats can bypass or have reduced cooldown
+                cooldown = self._cooldown_seconds
+                if threat.severity == "CRITICAL":
+                    cooldown = 5.0 # Fast response for critical incidents
+
+                if timestamp - last_time >= cooldown:
                     filtered.append(threat)
                     self._cooldowns[key] = timestamp
         return filtered
