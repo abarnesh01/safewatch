@@ -1,5 +1,1 @@
-"""
-SafeWatch Dashboard Package
-"""
-
-__all__ = []
+"""SafeWatch Dashboard Module."""
