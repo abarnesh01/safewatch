@@ -1,14 +1,10 @@
-"""
-SafeWatch — AlertManager
-Coordinates between ThreatEngine and Telegram bot with cooldown, routing, and queuing.
-"""
-
-import time
-import threading
-import asyncio
-from collections import defaultdict
-from typing import Optional
 from queue import PriorityQueue, Empty
+from datetime import datetime
+from loguru import logger
+from alerts.telegram_bot import SafeWatchTelegramBot
+from alerts.snapshot_builder import SnapshotBuilder
+from database.incident_logger import IncidentLogger
+from threats.threat_engine import ThreatReport
 
 class AlertManager:
     """
