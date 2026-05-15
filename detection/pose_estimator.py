@@ -124,7 +124,7 @@ class PoseEstimator:
 
     def __repr__(self) -> str:
         available = self._pose is not None
-        return f"PoseEstimator(available={available}, complexity={self._model_complexity})"
+        return f"PoseEstimator(available={available}, model={os.path.basename(self._model_path)})"
 
     def estimate(self, frame: np.ndarray, persons: list[Person]) -> list[PoseResult]:
         """
