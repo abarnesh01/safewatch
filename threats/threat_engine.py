@@ -169,11 +169,15 @@ class ThreatEngine:
         # 1. Apply temporal smoothing and confirmation
         stabilized_threats = self._stabilize_threats(raw_threats, camera_id)
 
-        # 2. Apply global confidence filter
-        global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
-        filtered_threats = [t for t in stabilized_threats if t.confidence >= global_min_conf]
+        # 2. Multi-Threat Correlation Engine
+        # Merges related events and detects escalation chains
+        correlated_threats = self._correlate_threats(stabilized_threats)
 
-        # 3. Apply cooldown filtering
+        # 3. Apply global confidence filter
+        global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
+        filtered_threats = [t for t in correlated_threats if t.confidence >= global_min_conf]
+
+        # 4. Apply cooldown filtering
         alertable_threats = self._apply_cooldowns(filtered_threats, camera_id, timestamp)
 
         # Set timestamps
@@ -196,6 +200,40 @@ class ThreatEngine:
             annotated_frame=annotated,
             overall_risk_level=risk_level,
         )
+
+    def _correlate_threats(self, threats: list[ThreatEvent]) -> list[ThreatEvent]:
+        """Correlate and group related threats into unified incidents."""
+        if not threats: return []
+        
+        correlated = []
+        threat_types = {t.threat_type for t in threats}
+        
+        # Rule 1: Escalation Mapping (e.g., ASSAULT -> UNCONSCIOUS)
+        escalations = {
+            "ASSAULT": ["FALL", "UNCONSCIOUS"],
+            "FIGHT": ["ASSAULT", "ACCIDENT"],
+            "HARASSMENT": ["ASSAULT", "ABUSE"]
+        }
+        
+        processed = set()
+        for threat in threats:
+            if threat.threat_type in processed: continue
+            
+            # Look for related escalations
+            related = escalations.get(threat.threat_type, [])
+            found_related = [t for t in threats if t.threat_type in related and t.threat_type not in processed]
+            
+            if found_related:
+                # Group into a unified incident
+                threat.description = f"{threat.threat_type} escalating to {', '.join(t.threat_type for t in found_related)}"
+                threat.severity = "CRITICAL"
+                threat.confidence = max(threat.confidence, max(t.confidence for t in found_related))
+                for t in found_related: processed.add(t.threat_type)
+            
+            correlated.append(threat)
+            processed.add(threat.threat_type)
+            
+        return correlated
 
     def _stabilize_threats(self, threats: list[ThreatEvent], camera_id: str) -> list[ThreatEvent]:
         """Apply rolling averaging and multi-frame confirmation."""
