@@ -104,10 +104,14 @@ class CameraStream:
             return False
 
     def _capture_loop(self):
-        """Main capture loop running in a dedicated thread."""
+        """Main capture loop with jitter stabilization and stale frame dropping."""
         logger.info(f"[{self._camera_id}] Capture thread started")
         frame_interval = 1.0 / self._fps_target if self._fps_target > 0 else 0.033
-
+        
+        # Jitter stabilization parameters
+        is_rtsp = isinstance(self._source, str) and "rtsp" in self._source.lower()
+        max_latency = 2.0  # seconds
+        
         while self._running:
             if not self._connected or self._capture is None or not self._capture.isOpened():
                 logger.warning(f"[{self._camera_id}] Connection lost, attempting reconnect in {self._reconnect_delay}s...")
@@ -124,17 +128,33 @@ class CameraStream:
 
             try:
                 ret, frame = self._capture.read()
+                now = time.time()
+                
                 if not ret or frame is None:
                     logger.warning(f"[{self._camera_id}] Failed to read frame")
                     self._connected = False
                     continue
 
+                # 1. Stale frame dropping for RTSP (prevent latency accumulation)
+                if is_rtsp:
+                    # If we are falling behind significantly, skip frames
+                    if now - self._last_frame_time > max_latency:
+                        logger.debug(f"[{self._camera_id}] Dropping stale RTSP frames (latency={now - self._last_frame_time:.2f}s)")
+                        # Read and discard until we catch up or buffer is empty
+                        for _ in range(5):
+                            self._capture.grab()
+                        continue
+
+                # 2. Frame processing
                 if frame.shape[1] != self._resolution[0] or frame.shape[0] != self._resolution[1]:
                     frame = cv2.resize(frame, self._resolution)
 
-                self._last_frame_time = time.time()
+                self._last_frame_time = now
 
+                # 3. Buffer management with jitter protection
                 try:
+                    # For unstable WiFi, we use a simple "most-recent-only" strategy in the main buffer
+                    # but ensure we don't burst too fast
                     self._buffer.put_nowait(frame)
                 except Full:
                     try:
@@ -147,14 +167,17 @@ class CameraStream:
                         pass
 
                 self._frame_count += 1
-                elapsed = time.time() - self._fps_timer
+                elapsed = now - self._fps_timer
                 if elapsed >= 1.0:
                     with self._lock:
                         self._fps = self._frame_count / elapsed
                     self._frame_count = 0
-                    self._fps_timer = time.time()
+                    self._fps_timer = now
 
-                sleep_time = frame_interval - (time.time() - self._last_frame_time)
+                # 4. Latency stabilization sleep
+                # If we read a frame extremely fast, we sleep to match target FPS
+                process_time = time.time() - now
+                sleep_time = frame_interval - process_time
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
