@@ -1,8 +1,10 @@
 """
 SafeWatch — PoseEstimator
 MediaPipe-based pose estimation with skeleton drawing and joint utilities.
+Uses the MediaPipe Tasks API (PoseLandmarker).
 """
 
+import os
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
@@ -70,29 +72,53 @@ class PoseResult:
         return None
 
 
+# Default model path relative to project root
+_DEFAULT_MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "models", "pose_landmarker_lite.task",
+)
+
+
 class PoseEstimator:
     """
     MediaPipe Pose estimator that processes cropped person bounding boxes
     to extract 33 body landmarks per person.
+
+    Uses the MediaPipe Tasks API (PoseLandmarker) instead of the deprecated
+    mp.solutions.pose interface.
     """
 
     def __init__(self, config: dict):
         self._config = config.get("detection", {})
-        self._model_complexity = self._config.get("pose_model_complexity", 0)
         self._min_confidence = self._config.get("pose_min_confidence", 0.5)
+        self._model_path = self._config.get("pose_model_path", _DEFAULT_MODEL_PATH)
         self._lock = threading.Lock()
         self._pose = None
 
         if MP_AVAILABLE:
-            self._mp_pose = mp.solutions.pose
-            self._mp_draw = mp.solutions.drawing_utils
-            self._pose = self._mp_pose.Pose(
-                static_image_mode=False,
-                model_complexity=self._model_complexity,
-                min_detection_confidence=self._min_confidence,
-                min_tracking_confidence=self._min_confidence,
-            )
-            logger.info(f"PoseEstimator initialized (complexity={self._model_complexity})")
+            if not os.path.isfile(self._model_path):
+                logger.error(
+                    f"Pose model not found at {self._model_path}. "
+                    "Download it with: wget -O models/pose_landmarker_lite.task "
+                    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+                    "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+                )
+            else:
+                base_options = mp.tasks.BaseOptions(
+                    model_asset_path=self._model_path,
+                )
+                options = mp.tasks.vision.PoseLandmarkerOptions(
+                    base_options=base_options,
+                    running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                    num_poses=1,
+                    min_pose_detection_confidence=self._min_confidence,
+                    min_pose_presence_confidence=self._min_confidence,
+                    min_tracking_confidence=self._min_confidence,
+                )
+                self._pose = mp.tasks.vision.PoseLandmarker.create_from_options(options)
+                logger.info(
+                    f"PoseEstimator initialized (model={os.path.basename(self._model_path)})"
+                )
         else:
             logger.warning("PoseEstimator running without MediaPipe — no pose data")
 
@@ -131,22 +157,27 @@ class PoseEstimator:
                 continue
 
             crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=crop_rgb)
 
             with self._lock:
                 try:
-                    pose_result = self._pose.process(crop_rgb)
+                    pose_result = self._pose.detect(mp_image)
                 except Exception as e:
                     logger.error(f"Pose estimation error for person {person.id}: {e}")
                     continue
 
-            if pose_result.pose_landmarks is None:
+            # New Tasks API: pose_landmarks is a list of NormalizedLandmarkList
+            if not pose_result.pose_landmarks:
                 continue
+
+            # Take the first detected pose in this crop
+            pose_lms = pose_result.pose_landmarks[0]
 
             landmarks = []
             keypoints = {}
             crop_h, crop_w = crop.shape[:2]
 
-            for idx, lm in enumerate(pose_result.pose_landmarks.landmark):
+            for idx, lm in enumerate(pose_lms):
                 abs_x = lm.x * crop_w + cx1
                 abs_y = lm.y * crop_h + cy1
 
@@ -157,7 +188,7 @@ class PoseEstimator:
                     "x": norm_x,
                     "y": norm_y,
                     "z": lm.z,
-                    "visibility": lm.visibility,
+                    "visibility": lm.visibility if hasattr(lm, 'visibility') else 1.0,
                     "abs_x": abs_x,
                     "abs_y": abs_y,
                 }
