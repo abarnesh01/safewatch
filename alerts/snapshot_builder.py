@@ -11,6 +11,15 @@ from typing import Optional
 import cv2
 import numpy as np
 from loguru import logger
+from utils.runtime_isolation import RuntimePath
+
+# Forensic Colors
+RISK_COLORS = {
+    "LOW": (0, 255, 255),
+    "MEDIUM": (0, 165, 255),
+    "HIGH": (0, 0, 255),
+    "CRITICAL": (255, 0, 128),
+}
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -78,6 +87,7 @@ class SnapshotBuilder:
         (tw, th), baseline = cv2.getTextSize(banner_text, font, font_scale, thickness)
         
         banner_h = th + baseline + 25
+        border_color = RISK_COLORS.get(severity, (0, 255, 255))
         cv2.rectangle(annotated, (0, 0), (w, banner_h), border_color, -1)
         cv2.putText(annotated, banner_text, (15, th + 15), font, font_scale, (255, 255, 255), thickness, cv2.LINE_AA)
 
