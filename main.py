@@ -70,7 +70,12 @@ class SafeWatchApp:
             incident_logger=self._incident_logger
         )
         
+        # 0. Runtime Isolation
+        RuntimePath.ensure_isolation()
+        
         self._running = True
+        self._start_cleanup_service()
+        
         logger.info(f"SafeWatch App initialized successfully on {self._device.upper()}")
 
     def _detect_hardware(self) -> str:
