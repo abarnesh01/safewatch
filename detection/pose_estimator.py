@@ -77,8 +77,9 @@ class PoseEstimator:
     MediaPipe Pose estimator with temporal smoothing and missing joint interpolation.
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, device: str = "cpu"):
         self._config = config.get("detection", {})
+        self._device = device
         self._min_confidence = self._config.get("pose_min_confidence", 0.5)
         self._model_path = self._config.get("pose_model_path", _DEFAULT_MODEL_PATH)
         self._lock = threading.Lock()
