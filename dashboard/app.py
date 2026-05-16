@@ -474,6 +474,22 @@ elif page == "🎬 Incident Replay":
             # 2. Forensic Replay UI
             st.markdown("### Forensic Timeline")
             
+            # Interactive Timeline Visualizer
+            import pandas as pd
+            if recent_incidents:
+                df_timeline = pd.DataFrame(recent_incidents)
+                df_timeline['timestamp'] = pd.to_datetime(df_timeline['timestamp'])
+                df_timeline['severity_num'] = df_timeline['severity'].map({"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4})
+                
+                st.scatter_chart(
+                    df_timeline,
+                    x="timestamp",
+                    y="severity_num",
+                    color="threat_type",
+                    size="confidence",
+                    use_container_width=True
+                )
+            
             col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([1, 2, 1])
             with col_ctrl1:
                 playback_speed = st.select_slider("Playback Speed", options=[0.25, 0.5, 1.0, 2.0], value=1.0)
