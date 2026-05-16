@@ -77,6 +77,11 @@ class SafeWatchApp:
         self._running = True
         self._start_cleanup_service()
         
+        # Observability
+        self._obs = ObservabilityEngine()
+        self._last_fps_time = time.time()
+        self._frame_count = 0
+        
         logger.info(f"SafeWatch App initialized successfully on {self._device.upper()}")
 
     def _detect_hardware(self) -> str:
@@ -161,16 +166,33 @@ class SafeWatchApp:
                     
                     # 1. AI Pipeline
                     start_time = time.time()
-                    persons = self._person_detector.detect(frame_packet.frame)
                     
+                    p_start = time.time()
+                    persons = self._person_detector.detect(frame_packet.frame)
+                    self._obs.record_breakdown("PersonDetection", (time.time() - p_start) * 1000)
+                    
+                    ps_start = time.time()
                     poses = {}
                     for p in persons:
                         pose = self._pose_estimator.estimate(frame_packet.frame, p.person_id, p.bbox)
                         if pose:
                             poses[p.person_id] = pose
+                    self._obs.record_breakdown("PoseEstimation", (time.time() - ps_start) * 1000)
                     
+                    f_start = time.time()
                     flow = self._flow_analyzer.analyze(frame_packet.frame)
+                    self._obs.record_breakdown("OpticalFlow", (time.time() - f_start) * 1000)
+                    
                     latency = (time.time() - start_time) * 1000
+                    
+                    # FPS calculation
+                    self._frame_count += 1
+                    now = time.time()
+                    if now - self._last_fps_time >= 1.0:
+                        fps = self._frame_count / (now - self._last_fps_time)
+                        self._obs.record_fps(fps)
+                        self._frame_count = 0
+                        self._last_fps_time = now
                     
                     # 2. Update Telemetry
                     self._update_telemetry(cam_id, latency)
