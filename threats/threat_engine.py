@@ -16,10 +16,10 @@ from loguru import logger
 
 from detection.person_detector import Person
 from detection.pose_estimator import PoseResult
-from detection.optical_flow import FlowResult
 from detection.zone_manager import ZoneManager
 from classifier.velocity_tracker import VelocityTracker
 from classifier.action_classifier import ActionClassifier
+from utils.observability import ObservabilityEngine
 from threats.fight_detector import FightDetector, ThreatEvent
 from threats.fall_detector import FallDetector
 from threats.harassment_detector import HarassmentDetector
