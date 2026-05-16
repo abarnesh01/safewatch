@@ -231,6 +231,28 @@ elif page == "📋 Incident History":
                     snap_path = inc.get("snapshot_path", "")
                     if snap_path and Path(snap_path).exists():
                         st.image(snap_path, caption="Snapshot")
+                    
+                    # Feedback Controls
+                    st.markdown("#### 🛠️ Operator Verification")
+                    inc_id = inc.get('id')
+                    col_fb1, col_fb2, col_fb3 = st.columns(3)
+                    with col_fb1:
+                        if st.button("✅ True Positive", key=f"tp_{inc_id}"):
+                            incident_logger.update_feedback(inc_id, "TRUE_POSITIVE")
+                            st.rerun()
+                    with col_fb2:
+                        if st.button("❌ False Positive", key=f"fp_{inc_id}"):
+                            incident_logger.update_feedback(inc_id, "FALSE_POSITIVE")
+                            st.rerun()
+                    with col_fb3:
+                        if st.button("❓ Uncertain", key=f"un_{inc_id}"):
+                            incident_logger.update_feedback(inc_id, "UNCERTAIN")
+                            st.rerun()
+                    
+                    fb_notes = st.text_area("Verification Notes", value=inc.get('operator_notes', '') or '', key=f"notes_{inc_id}")
+                    if st.button("💾 Save Verification", key=f"save_{inc_id}"):
+                        incident_logger.update_feedback(inc_id, inc.get('tags', ''), fb_notes)
+                        st.success("Verification saved.")
         else:
             st.info("No incidents found for the selected filters.")
 
