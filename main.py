@@ -229,9 +229,21 @@ class SafeWatchApp:
             self.shutdown()
 
     def _update_telemetry(self, cam_id: str, latency: float):
-        """Update system telemetry and share with dashboard."""
+        """Update system telemetry and apply adaptive optimization."""
         cpu = psutil.cpu_percent()
         ram = psutil.virtual_memory().percent
+        
+        # Adaptive AI Optimization Layer
+        # If CPU > 85%, increase frame skip across all samplers
+        if cpu > 85.0:
+            logger.warning(f"High CPU detected ({cpu}%). Throttling inference sampling...")
+            for sampler in self._stream_manager._samplers.values():
+                sampler.frame_skip = min(30, sampler.frame_skip + 1)
+        elif cpu < 40.0:
+            # Gradually recover if idle
+            for sampler in self._stream_manager._samplers.values():
+                sampler.frame_skip = max(5, sampler.frame_skip - 1)
+
         logger.debug(f"Telemetry [{cam_id}]: Latency={latency:.1f}ms CPU={cpu}% RAM={ram}%")
 
     def _start_cleanup_service(self) -> None:
