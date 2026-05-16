@@ -46,8 +46,8 @@ class SafeWatchApp:
         
         # 3. Initialize AI Detectors with auto-detected device
         self._person_detector = PersonDetector(
-            model_path=self._config["detection"]["yolo"]["model_path"],
-            confidence=self._config["detection"]["yolo"]["confidence_threshold"],
+            model_path=self._config["detection"].get("model_type", "yolov8n.pt"),
+            confidence=self._config["detection"].get("person_conf", 0.5),
             device=self._device
         )
         self._pose_estimator = PoseEstimator(config=self._config, device=self._device)
