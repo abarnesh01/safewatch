@@ -68,6 +68,7 @@ class ThreatEngine:
         self._zone_manager = zone_manager
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=4)
+        self._classifier = ActionClassifier(config)
 
         # Modular Detector Registry
         self._detectors = {}
@@ -197,9 +198,11 @@ class ThreatEngine:
         # 1. Apply temporal smoothing and confirmation
         stabilized_threats = self._stabilize_threats(raw_threats, camera_id)
 
-        # 2. Multi-Threat Correlation Engine
-        # Merges related events and detects escalation chains
-        correlated_threats = self._correlate_threats(stabilized_threats)
+        # 2. Secondary AI Verification Layer
+        verified_threats = self._verify_threats(stabilized_threats, frame_data)
+
+        # 3. Multi-Threat Correlation Engine
+        correlated_threats = self._correlate_threats(verified_threats)
 
         # 3. Apply global confidence filter
         global_min_conf = self._config.get("threats", {}).get("global_min_confidence", 0.0)
@@ -262,6 +265,48 @@ class ThreatEngine:
             processed.add(threat.threat_type)
             
         return correlated
+
+    def _verify_threats(self, threats: list[ThreatEvent], frame_data: dict) -> list[ThreatEvent]:
+        """Perform secondary AI verification on rule-based triggers."""
+        if not threats or not self._classifier: return threats
+        
+        verified = []
+        persons = frame_data.get("persons", [])
+        poses = frame_data.get("poses", [])
+        
+        for threat in threats:
+            # Only verify specific physical threats
+            if threat.threat_type not in ["FIGHT", "FALL", "ASSAULT", "ABUSE"]:
+                verified.append(threat)
+                continue
+                
+            # Run AI classification for involved persons
+            max_ai_conf = 0.0
+            behavior_boost = 0.0
+            
+            for pid in threat.persons_involved:
+                # Find the person object
+                person = next((p for p in persons if p.id == pid), None)
+                if person:
+                    res = self._classifier.classify(person, poses)
+                    # Fusion: combine rule confidence with AI confidence
+                    if res.action_class == threat.threat_type:
+                        max_ai_conf = max(max_ai_conf, res.confidence)
+                        behavior_boost = max(behavior_boost, getattr(res, "behavior_score", 0.0))
+            
+            # Confidence Fusion Logic
+            # If AI confirms, boost confidence. If AI strongly disagrees, penalize.
+            if max_ai_conf > 0.4:
+                threat.confidence = (threat.confidence * 0.4) + (max_ai_conf * 0.4) + (behavior_boost * 0.2)
+                verified.append(threat)
+            elif threat.severity == "CRITICAL":
+                # Critical threats are preserved but marked for audit
+                threat.description += " (AI Verification Pending)"
+                verified.append(threat)
+            else:
+                logger.debug(f"AI Verification rejected {threat.threat_type} (AI Conf: {max_ai_conf:.2f})")
+                
+        return verified
 
     def _stabilize_threats(self, threats: list[ThreatEvent], camera_id: str) -> list[ThreatEvent]:
         """Apply rolling averaging and multi-frame confirmation."""

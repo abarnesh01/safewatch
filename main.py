@@ -264,6 +264,10 @@ class SafeWatchApp:
                     for p in RuntimePath.CACHE.glob("*"):
                         if p.is_file() and p.stat().st_mtime < (time.time() - 3600): # 1 hour
                             p.unlink()
+
+                    # Database Pruning
+                    db_retention = self._config.get("database", {}).get("retention_days", 30)
+                    self._db.prune_old_data(db_retention)
                             
                 except Exception as e:
                     logger.error(f"Cleanup service error: {e}")

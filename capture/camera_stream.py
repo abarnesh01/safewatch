@@ -299,4 +299,5 @@ class CameraStream:
             "buffer_size": self._buffer.qsize(),
             "resolution": self._resolution,
             "last_frame_time": self._last_frame_time,
+            "reconnect_count": self._reconnect_count,
         }

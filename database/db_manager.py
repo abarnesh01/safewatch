@@ -202,7 +202,29 @@ class DatabaseManager:
         cursor = self.execute(query, params)
         return [dict(row) for row in cursor.fetchall()]
 
+    def prune_old_data(self, days: int = 30):
+        """Prune incident and audit records older than N days."""
+        logger.info(f"Database Pruning: Removing records older than {days} days...")
+        
+        queries = [
+            "DELETE FROM incidents WHERE timestamp < date('now', '-' || ? || ' days')",
+            "DELETE FROM audit_logs WHERE timestamp < date('now', '-' || ? || ' days')",
+            "DELETE FROM system_logs WHERE timestamp < date('now', '-' || ? || ' days')"
+        ]
+        
+        try:
+            for q in queries:
+                self.execute_async(q, (str(days),))
+            logger.info("Database pruning tasks queued.")
+        except Exception as e:
+            logger.error(f"Database pruning failed: {e}")
+
     def close(self):
+        # Stop write worker
+        self._write_queue.put((None, None))
+        if self._write_thread.is_alive():
+            self._write_thread.join(timeout=2.0)
+            
         if hasattr(self._local, "connection"):
             self._local.connection.close()
             del self._local.connection
