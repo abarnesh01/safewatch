@@ -132,7 +132,7 @@ class StreamManager:
 
     def get_status(self) -> dict:
         """
-        Get health status of all cameras.
+        Get health status of all cameras with advanced intelligence analytics.
 
         Returns:
             Dict mapping camera_id → status dict
@@ -140,7 +140,15 @@ class StreamManager:
         status = {}
         with self._lock:
             for cam_id, stream in self._streams.items():
-                status[cam_id] = stream.get_status()
+                s = stream.get_status()
+                # Advanced Intelligence
+                s["bandwidth_mbps"] = round((s["fps"] * stream.resolution[0] * stream.resolution[1] * 3) / (1024 * 1024), 2)
+                
+                # Reliability Score (0.0 - 1.0)
+                reconnects = getattr(stream, "_reconnect_count", 0)
+                s["reliability_score"] = max(0.0, 1.0 - (reconnects * 0.1))
+                
+                status[cam_id] = s
         return status
 
     def _health_monitor_loop(self):
