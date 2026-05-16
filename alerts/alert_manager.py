@@ -86,15 +86,21 @@ class AlertManager:
                     continue
                 self._cooldowns[cooldown_key] = now
 
-            # 3. Priority Mapping
-            # Lower value = higher priority in PriorityQueue
-            priority_map = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
-            priority = priority_map.get(threat.severity, 4)
+            # 3. Dynamic Smart Prioritization
+            severity_weights = {"CRITICAL": 0, "HIGH": 10, "MEDIUM": 20, "LOW": 30}
+            base_priority = severity_weights.get(threat.severity, 40)
+            
+            # Refinement based on confidence and behavior persistence
+            persistence = getattr(threat, "behavior_score", 0.0)
+            priority_refinement = int((1.0 - threat.confidence) * 5) + int((1.0 - persistence) * 5)
+            final_priority = max(0, base_priority + priority_refinement)
 
             threat_dict = {
                 "threat_type": threat.threat_type,
                 "confidence": threat.confidence,
                 "severity": threat.severity,
+                "persistence": persistence,
+                "urgency_score": 100 - final_priority,
                 "persons_involved": threat.persons_involved,
                 "description": threat.description,
                 "location_bbox": threat.location_bbox,
@@ -130,7 +136,7 @@ class AlertManager:
 
             try:
                 # Store as (priority, timestamp, data) to ensure FIFO for same priority
-                self._alert_queue.put_nowait((priority, time.time(), alert_data))
+                self._alert_queue.put_nowait((final_priority, time.time(), alert_data))
             except Exception:
                 logger.error(f"Alert queue overflow! Dropping {threat.threat_type}")
 
