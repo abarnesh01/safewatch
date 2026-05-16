@@ -58,12 +58,8 @@ class SafeWatchApp:
         
         # 5. Initialize Alerting
         self._telegram_bot = None
-        if self._config["alerts"]["telegram"]["enabled"]:
-            from alerts.telegram_bot import SafeWatchTelegramBot
-            self._telegram_bot = SafeWatchTelegramBot(
-                token=self._config["alerts"]["telegram"]["bot_token"],
-                chat_id=self._config["alerts"]["telegram"]["chat_id"]
-            )
+        if self._config["alerts"].get("telegram_enabled", False):
+            self._telegram_bot = SafeWatchTelegramBot(self._config)
         
         self._alert_manager = AlertManager(
             config=self._config,
