@@ -35,12 +35,12 @@ class PersonDetector:
     YOLOv8-based person detector with IoU-based tracking for consistent person IDs.
     """
 
-    def __init__(self, config: dict):
-        self._config = config.get("detection", {})
-        self._model_path = self._config.get("yolo_model", "models/yolov8n.pt")
-        self._confidence = self._config.get("yolo_confidence", 0.5)
-        self._classes = self._config.get("yolo_classes", [0])
-        self._max_tracked = self._config.get("max_persons_tracked", 10)
+    def __init__(self, model_path: str = "models/yolov8n.pt", confidence: float = 0.5, device: str = "cpu"):
+        self._model_path = model_path
+        self._confidence = confidence
+        self._device = device
+        self._classes = [0] # Person only
+        self._max_tracked = 10
         self._model = None
         self._lock = threading.Lock()
         self._next_id = 1
