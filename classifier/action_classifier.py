@@ -137,24 +137,6 @@ class ActionClassifier:
 
         return data.reshape(1, seq_len, feature_dim)
 
-    def classify(
-        self,
-        pose_sequence: Optional[list[PoseResult]] = None,
-        skeleton_features: Optional[dict] = None,
-        person_id: Optional[int] = None,
-    ) -> ActionResult:
-        """
-        Classify the action from a pose sequence.
-
-        Args:
-            pose_sequence: List of PoseResult objects over time
-            skeleton_features: Optional pre-computed features
-            person_id: Optional person ID to use internal buffer
-
-        Returns:
-            ActionResult with predicted class and confidence
-        """
-        if pose_sequence is None and person_id is not None:
             with self._lock:
                 buffer = self._pose_buffers.get(person_id)
                 if buffer and len(buffer) > 0:
