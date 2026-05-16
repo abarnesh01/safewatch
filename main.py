@@ -42,7 +42,7 @@ class SafeWatchApp:
         self._incident_logger = IncidentLogger(self._db)
         
         # 2. Initialize Hardware/Capture
-        self._stream_manager = StreamManager()
+        self._stream_manager = StreamManager(self._config)
         
         # 3. Initialize AI Detectors with auto-detected device
         self._person_detector = PersonDetector(
