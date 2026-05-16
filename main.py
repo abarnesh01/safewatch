@@ -109,7 +109,7 @@ class SafeWatchApp:
             return yaml.safe_load(f)
 
     def _setup_logging(self) -> None:
-        log_dir = Path(self._config["system"]["log_dir"])
+        log_dir = Path(self._config["system"].get("log_dir", "logs"))
         log_dir.mkdir(exist_ok=True)
         logger.add(log_dir / "safewatch.log", rotation="10 MB", level="INFO")
         

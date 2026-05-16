@@ -1844,3 +1844,8 @@
 2026-05-15 18:43:58 | INFO    | threat_engine:shutdown:309 — ThreatEngine shutdown
 2026-05-15 18:43:59 | INFO    | pose_estimator:close:315 — PoseEstimator closed
 2026-05-15 18:43:59 | INFO    | main:main_loop:469 — 👋 SafeWatch stopped. Goodbye!
+2026-05-16 18:07:22.406 | WARNING  | __main__:_validate_worktree:129 - Repository worktree is DIRTY. Please commit or stash changes before running production.
+2026-05-16 18:07:22.416 | ERROR    | __main__:_validate_worktree:138 - DETECTION FAILURE: Runtime artifacts are being tracked by Git!
+2026-05-16 18:07:22.416 | ERROR    | __main__:_validate_worktree:139 - Fix: Run 'git rm -r --cached <dir>' and update .gitignore
+2026-05-16 18:07:22.455 | INFO     | __main__:_detect_hardware:104 - Hardware Acceleration: CPU only
+2026-05-16 18:07:22.512 | INFO     | database.db_manager:__init__:34 - Database initialized at logs/safewatch.db with analytics caching
