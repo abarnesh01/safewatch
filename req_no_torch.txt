@@ -1,0 +1,17 @@
+opencv-python
+ultralytics
+mediapipe
+onnxruntime
+numpy
+scipy
+pyyaml
+python-telegram-bot>=20.0
+streamlit
+imutils
+Pillow
+schedule
+loguru
+python-dotenv
+scikit-learn
+matplotlib
+seaborn
