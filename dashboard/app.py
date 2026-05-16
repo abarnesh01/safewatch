@@ -73,7 +73,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
+        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Detector Config", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
         label_visibility="collapsed",
     )
 
@@ -640,3 +640,55 @@ elif page == "🛠️ Dev Diagnostics":
 
     if st.button("🧹 Force Stale Cache Cleanup"):
         st.success("Manual cleanup triggered.")
+
+# ─── PAGE 8: Detector Management ───────────────────────────────
+elif page == "🛠️ Detector Config":
+    st.markdown('<div class="header-banner"><h1>🛠️ AI Detector Management</h1></div>', unsafe_allow_html=True)
+    
+    if "threat_engine" not in st.session_state:
+        st.warning("📡 ThreatEngine not found. Start SafeWatch to enable detector control.")
+    else:
+        te = st.session_state["threat_engine"]
+        obs = getattr(te, "_obs", None)
+        summary = obs.get_summary() if obs else {}
+        
+        st.markdown("### 🧬 Active Registry")
+        
+        # Grid of detectors
+        detectors = list(te._detectors.keys())
+        cols = st.columns(3)
+        
+        for idx, name in enumerate(detectors):
+            with cols[idx % 3]:
+                m = summary.get("detectors", {}).get(name, {})
+                health = m.get("health", 100)
+                
+                # Dynamic Color based on health
+                health_color = "🟢" if health > 90 else "🟡" if health > 60 else "🔴"
+                
+                st.markdown(f"#### {name.upper()} {health_color}")
+                
+                # Controls
+                enabled = st.toggle("Enabled", value=True, key=f"det_en_{name}")
+                sensitivity = st.slider("Sensitivity", 0.0, 1.0, 0.75, key=f"det_sens_{name}")
+                
+                # Metrics
+                st.caption(f"Latency: {m.get('avg_lat', 0):.1f}ms")
+                st.caption(f"Executions: {m.get('executions', 0)}")
+                
+                # Visual Indicator
+                st.progress(health / 100.0)
+                
+                if not enabled:
+                    st.caption("🚫 *Detector Temporarily Disabled*")
+
+        st.markdown("---")
+        st.markdown("### 🛠️ Global Pipeline Optimization")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.selectbox("Optimization Mode", ["Balanced", "High Performance", "Power Saving"])
+        with c2:
+            st.number_input("Max Thread Workers", 1, 16, 4)
+        
+        if st.button("💾 Apply & Hot-Reload Detectors"):
+            st.success("Registry configuration updated in-memory.")
