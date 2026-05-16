@@ -137,6 +137,17 @@ class ActionClassifier:
 
         return data.reshape(1, seq_len, feature_dim)
 
+    def classify(
+        self,
+        pose_sequence: Optional[list[PoseResult]] = None,
+        skeleton_features: Optional[dict] = None,
+        person_id: Optional[int] = None,
+        threshold: Optional[float] = None,
+    ) -> ActionResult:
+        """
+        Classify the action from a pose sequence.
+        """
+        if pose_sequence is None and person_id is not None:
             with self._lock:
                 buffer = self._pose_buffers.get(person_id)
                 if buffer and len(buffer) > 0:
@@ -156,6 +167,12 @@ class ActionClassifier:
 
         if person_id is not None:
             res.behavior_score = self._behavior_memories[person_id].update(res.action_class, res.confidence)
+            
+        # Apply adaptive threshold filter
+        target_threshold = threshold or self._confidence_threshold
+        if res.confidence < target_threshold:
+            # If below threshold, bias toward normal but keep original for observability
+            res.description = f"Filtered (Conf {res.confidence:.2f} < {target_threshold:.2f})"
             
         return res
 

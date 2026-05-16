@@ -141,7 +141,19 @@ class Trainer:
 
         logger.info("\n" + classification_report(y_true, y_pred, target_names=classes))
         cm = confusion_matrix(y_true, y_pred)
-        logger.info(f"Confusion Matrix:\n{cm}")
+        
+        # Save metrics for dashboard
+        import json
+        report = classification_report(y_true, y_pred, target_names=classes, output_dict=True)
+        metrics = {
+            "report": report,
+            "confusion_matrix": cm.tolist(),
+            "classes": classes.tolist() if isinstance(classes, np.ndarray) else classes,
+            "timestamp": time.time()
+        }
+        with open(self.output_dir / "validation_metrics.json", "w") as f:
+            json.dump(metrics, f, indent=4)
+        logger.info(f"Validation metrics saved to {self.output_dir / 'validation_metrics.json'}")
 
 if __name__ == "__main__":
     trainer = Trainer()
