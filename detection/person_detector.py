@@ -60,6 +60,7 @@ class PersonDetector:
         try:
             from ultralytics import YOLO
             self._model = YOLO(self._model_path)
+            self._model.to(self._device)
             logger.info(f"YOLOv8 model loaded from {self._model_path}")
         except Exception as e:
             logger.error(f"Failed to load YOLO model: {e}")
