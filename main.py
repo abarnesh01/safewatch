@@ -144,6 +144,7 @@ class SafeWatchApp:
     async def run(self) -> None:
         """Main processing loop."""
         logger.info("Starting SafeWatch surveillance engine...")
+        self._incident_logger.add_audit_log("SYSTEM", "ENGINE_START", "PROCESS", "SafeWatch surveillance engine initialized")
         
         # Add cameras from config
         for cam_cfg in self._config["cameras"]:
@@ -261,6 +262,7 @@ class SafeWatchApp:
 
     def shutdown(self) -> None:
         logger.info("Shutting down SafeWatch...")
+        self._incident_logger.add_audit_log("SYSTEM", "ENGINE_SHUTDOWN", "PROCESS", "SafeWatch surveillance engine shutdown")
         self._running = False
         self._stream_manager.stop_all()
         self._db.close()
