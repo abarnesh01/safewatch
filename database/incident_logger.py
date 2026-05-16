@@ -64,6 +64,17 @@ class IncidentLogger:
         query = "UPDATE incidents SET acknowledged = 1 WHERE id = ?"
         self.db.execute(query, (incident_id,))
 
+    def update_feedback(self, incident_id: int, status: str, notes: str = ""):
+        """Update incident with operator verification feedback."""
+        query = "UPDATE incidents SET acknowledged = 1, tags = ?, operator_notes = ? WHERE id = ?"
+        self.db.execute(query, (status, notes, incident_id))
+        logger.info(f"Feedback recorded for Incident {incident_id}: {status}")
+
+    def get_verified_incidents(self, status: str = "TRUE_POSITIVE"):
+        """Fetch incidents verified by operators for retraining."""
+        query = "SELECT * FROM incidents WHERE tags = ?"
+        return self.db.fetch_all(query, (status,))
+
     def get_stats_by_type(self):
         query = "SELECT threat_type, COUNT(*) as count FROM incidents GROUP BY threat_type"
         return self.db.fetch_all(query)

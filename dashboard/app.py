@@ -73,7 +73,7 @@ with st.sidebar:
 
     page = st.radio(
         "Navigation",
-        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Detector Config", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
+        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Detector Config", "📊 Detector Validation", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
         label_visibility="collapsed",
     )
 
@@ -708,3 +708,50 @@ elif page == "🛠️ Detector Config":
         
         if st.button("💾 Apply & Hot-Reload Detectors"):
             st.success("Registry configuration updated in-memory.")
+
+# ─── PAGE 9: Detector Validation ──────────────────────────────
+elif page == "📊 Detector Validation":
+    st.markdown('<div class="header-banner"><h1>📊 AI Detector Validation</h1></div>', unsafe_allow_html=True)
+    
+    metrics_path = Path("models/validation_metrics.json")
+    if not metrics_path.exists():
+        st.info("📉 No validation metrics found. Run `python training/train_classifier.py` to generate reports.")
+    else:
+        import json
+        import pandas as pd
+        with open(metrics_path, "r") as f:
+            metrics = json.load(f)
+            
+        st.markdown(f"### 🧪 Model Performance (Last Trained: {time.ctime(metrics['timestamp'])})")
+        
+        # 1. Summary Metrics
+        report = metrics["report"]
+        accuracy = report.get("accuracy", 0)
+        st.metric("Overall Accuracy", f"{accuracy:.1%}")
+        
+        c1, c2, c3 = st.columns(3)
+        with c1: st.metric("Macro Precision", f"{report['macro avg']['precision']:.2f}")
+        with c2: st.metric("Macro Recall", f"{report['macro avg']['recall']:.2f}")
+        with c3: st.metric("Macro F1-Score", f"{report['macro avg']['f1-score']:.2f}")
+        
+        # 2. Per-Class Metrics
+        st.markdown("#### 🧬 Per-Action Breakdown")
+        classes = metrics["classes"]
+        class_data = []
+        for cls in classes:
+            if cls in report:
+                class_data.append({
+                    "Action": cls,
+                    "Precision": report[cls]["precision"],
+                    "Recall": report[cls]["recall"],
+                    "F1": report[cls]["f1-score"],
+                    "Support": report[cls]["support"]
+                })
+        st.table(pd.DataFrame(class_data))
+        
+        # 3. Confusion Matrix
+        st.markdown("#### 📉 Confusion Matrix")
+        import plotly.express as px
+        cm = metrics["confusion_matrix"]
+        fig = px.imshow(cm, x=classes, y=classes, text_auto=True, color_continuous_scale='Viridis', labels=dict(x="Predicted", y="Actual"))
+        st.plotly_chart(fig, use_container_width=True)

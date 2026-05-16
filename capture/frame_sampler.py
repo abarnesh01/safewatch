@@ -13,6 +13,30 @@ from loguru import logger
 
 from capture.camera_stream import CameraStream
 
+class SceneLearner:
+    """Analyzes and learns environmental baseline for a camera scene."""
+    def __init__(self, history_size: int = 1000):
+        self.motion_baseline = deque(maxlen=history_size)
+        self.light_baseline = deque(maxlen=history_size)
+        self.noise_profile = 0.0
+        self.avg_light = 0.0
+
+    def update(self, motion_pixels: int, brightness: float):
+        self.motion_baseline.append(motion_pixels)
+        self.light_baseline.append(brightness)
+        
+        if len(self.motion_baseline) > 100:
+            self.noise_profile = np.percentile(list(self.motion_baseline), 75)
+            self.avg_light = np.mean(list(self.light_baseline))
+
+    def get_profile(self) -> dict:
+        return {
+            "noise_profile": float(self.noise_profile),
+            "avg_light": float(self.avg_light),
+            "is_noisy": self.noise_profile > 1000,
+            "is_dark": self.avg_light < 40
+        }
+
 
 class FrameSampler:
     """
@@ -49,6 +73,7 @@ class FrameSampler:
         self._light_level_history = deque(maxlen=50)
         self._frame_number = 0
         self._last_processed_time = 0.0
+        self._scene_learner = SceneLearner()
         
         logger.info(
             f"FrameSampler initialized for {camera_stream.camera_id}: "
@@ -94,6 +119,8 @@ class FrameSampler:
         self._motion_history.append(motion_pixels)
         
         # 4. Adaptive threshold adjustment
+        self._scene_learner.update(motion_pixels, avg_brightness)
+        
         if self._adaptive_enabled and len(self._motion_history) > 20:
             # Baseline is the median noise level in the scene
             baseline_noise = np.median(self._motion_history)
@@ -109,14 +136,6 @@ class FrameSampler:
     def get_frame(self) -> Generator[dict, None, None]:
         """
         Generator that yields processed frames with metadata.
-
-        Yields:
-            Dict with keys:
-                - frame: np.ndarray (BGR image at configured resolution)
-                - camera_id: str
-                - timestamp: float (unix timestamp)
-                - frame_number: int
-                - has_motion: bool
         """
         while self._stream.is_running():
             raw_frame = self._stream.read()
@@ -145,6 +164,7 @@ class FrameSampler:
                 "timestamp": now,
                 "frame_number": self._frame_number,
                 "has_motion": has_motion,
+                "scene_profile": self._scene_learner.get_profile()
             }
 
     def update_skip_rate(self, n: int):
