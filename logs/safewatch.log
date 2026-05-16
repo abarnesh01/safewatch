@@ -1857,3 +1857,11 @@
 2026-05-16 18:07:33.137 | INFO     | capture.frame_sampler:__init__:78 - FrameSampler initialized for cam_01: adaptive=True, base_threshold=500.0
 2026-05-16 18:07:33.137 | INFO     | capture.stream_manager:_init_streams:70 - Camera configured: cam_01 (Front Entrance)
 2026-05-16 18:07:33.137 | INFO     | capture.stream_manager:__init__:33 - StreamManager initialized with 1 cameras
+2026-05-16 18:08:27.743 | ERROR    | __main__:_validate_worktree:134 - DETECTION FAILURE: Runtime artifacts are being tracked by Git!
+2026-05-16 18:08:27.743 | ERROR    | __main__:_validate_worktree:135 - Fix: Run 'git rm -r --cached <dir>' and update .gitignore
+2026-05-16 18:08:27.763 | INFO     | __main__:_detect_hardware:100 - Hardware Acceleration: CPU only
+2026-05-16 18:08:27.764 | INFO     | database.db_manager:__init__:34 - Database initialized at logs/safewatch.db with analytics caching
+2026-05-16 18:08:27.764 | INFO     | capture.camera_stream:__init__:49 - CameraStream created: id=cam_01 source=0 name=Front Entrance
+2026-05-16 18:08:27.764 | INFO     | capture.frame_sampler:__init__:78 - FrameSampler initialized for cam_01: adaptive=True, base_threshold=500.0
+2026-05-16 18:08:27.765 | INFO     | capture.stream_manager:_init_streams:70 - Camera configured: cam_01 (Front Entrance)
+2026-05-16 18:08:27.765 | INFO     | capture.stream_manager:__init__:33 - StreamManager initialized with 1 cameras
