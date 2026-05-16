@@ -111,7 +111,34 @@ class ThreatEngine:
             "accident": AccidentDetector(config),
             "abuse": AbuseDetector(config)
         }
-        logger.info(f"ThreatEngine Registry initialized with {len(self._detectors)} modular detectors.")
+        
+        # Adaptive Calibration Profiles
+        self._calibration_profiles = {
+            "DAY": {"base_offset": 0.0, "multiplier": 1.0},
+            "NIGHT": {"base_offset": 0.15, "multiplier": 1.2}, # Higher thresholds at night due to noise
+            "DUSK": {"base_offset": 0.05, "multiplier": 1.1}
+        }
+        logger.info(f"ThreatEngine Registry initialized with {len(self._detectors)} modular detectors and adaptive calibration.")
+
+    def _get_adaptive_threshold(self, detector_name: str, base_threshold: float) -> float:
+        """Calculate dynamic threshold based on environment profile."""
+        hour = time.localtime().tm_hour
+        profile_name = "DAY"
+        if 20 <= hour or hour <= 5:
+            profile_name = "NIGHT"
+        elif 17 <= hour < 20 or 5 < hour < 8:
+            profile_name = "DUSK"
+            
+        profile = self._calibration_profiles.get(profile_name, self._calibration_profiles["DAY"])
+        
+        # Apply profile transformation
+        adjusted = (base_threshold * profile["multiplier"]) + profile["base_offset"]
+        
+        # Detector-specific corrections (e.g. Fight is noisier than Fall)
+        if detector_name == "fight":
+            adjusted += 0.05
+        
+        return min(0.95, adjusted)
 
     def _get_detector(self, name: str):
         return self._detectors.get(name)
