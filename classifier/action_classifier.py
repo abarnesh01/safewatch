@@ -3,11 +3,12 @@ SafeWatch — ActionClassifier
 ONNX-based or rule-based action classification from pose sequences.
 """
 
+import time
 import threading
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
-from collections import deque
+from collections import deque, defaultdict
 
 import numpy as np
 from loguru import logger
@@ -28,12 +29,30 @@ class ActionResult:
     action_class: str
     confidence: float
     top3_predictions: list[tuple[str, float]]
+    behavior_score: float = 0.0 # Persistence/Aggression score
 
     def __repr__(self) -> str:
         return (
             f"ActionResult(class='{self.action_class}', "
-            f"confidence={self.confidence:.2f})"
+            f"confidence={self.confidence:.2f}, score={self.behavior_score:.2f})"
         )
+
+class BehaviorMemory:
+    """Tracks temporal behavior patterns and persistence."""
+    def __init__(self, max_history=100):
+        self.history: deque = deque(maxlen=max_history)
+        self.escalation_score = 0.0
+        self.last_detection = 0.0
+
+    def update(self, action_class: str, confidence: float):
+        self.history.append((action_class, confidence, time.time()))
+        # Persistence calculation: high confidence detections over time
+        recent = [c for a, c, t in self.history if a != "normal" and time.time() - t < 10]
+        if recent:
+            self.escalation_score = (sum(recent) / len(recent)) * (len(recent) / 10.0)
+        else:
+            self.escalation_score *= 0.95 # Decay
+        return min(1.0, self.escalation_score)
 
 
 class ActionClassifier:
@@ -50,6 +69,7 @@ class ActionClassifier:
         self._lock = threading.Lock()
         self._skeleton_analyzer = SkeletonAnalyzer()
         self._pose_buffers: dict[int, deque] = {}
+        self._behavior_memories: dict[int, BehaviorMemory] = defaultdict(BehaviorMemory)
         self._buffer_size = 30
         self._use_onnx = False
 
@@ -148,9 +168,14 @@ class ActionClassifier:
             )
 
         if self._use_onnx and self._session is not None:
-            return self._classify_onnx(pose_sequence)
+            res = self._classify_onnx(pose_sequence)
         else:
-            return self._classify_rule_based(pose_sequence, skeleton_features)
+            res = self._classify_rule_based(pose_sequence, skeleton_features)
+
+        if person_id is not None:
+            res.behavior_score = self._behavior_memories[person_id].update(res.action_class, res.confidence)
+            
+        return res
 
     def _classify_onnx(self, pose_sequence: list[PoseResult]) -> ActionResult:
         """Run ONNX model inference."""
