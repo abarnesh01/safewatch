@@ -1,6 +1,6 @@
 from loguru import logger
 from .db_manager import DatabaseManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
