@@ -29,9 +29,42 @@ class DatabaseManager:
         self._cache_lock = threading.Lock()
         self._cache_ttl = 5.0 # 5 seconds for live analytics
         
+        # Write Queue for Concurrency Hardening
+        from queue import Queue
+        self._write_queue = Queue()
+        self._write_thread = threading.Thread(target=self._write_worker, daemon=True)
+        self._write_thread.start()
+        
         self._initialize_db()
         self._initialized = True
-        logger.info(f"Database initialized at {self.db_path} with analytics caching")
+        logger.info(f"Database hardened: WAL enabled, WriteQueue active at {self.db_path}")
+
+    def _write_worker(self):
+        """Background worker to serialize all database writes."""
+        conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        while True:
+            try:
+                query, params = self._write_queue.get()
+                if query is None: break
+                
+                # Retry logic for locked database
+                for attempt in range(5):
+                    try:
+                        conn.execute(query, params)
+                        conn.commit()
+                        break
+                    except sqlite3.OperationalError as e:
+                        if "locked" in str(e).lower():
+                            time.sleep(0.05 * (2 ** attempt))
+                        else:
+                            raise
+                self._write_queue.task_done()
+            except Exception as e:
+                logger.error(f"Database write worker error: {e}")
+
+    def execute_async(self, query: str, params: tuple = ()):
+        """Queue a write operation to be executed in the background."""
+        self._write_queue.put((query, params))
 
     def fetch_cached(self, query: str, params: tuple = (), ttl: float = None):
         """Fetch from cache if available and not expired."""
@@ -71,6 +104,10 @@ class DatabaseManager:
         conn = self._get_connection()
         cursor = conn.cursor()
         
+        # Enable WAL mode for high-concurrency
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        
         # Incidents table (v2 - Forensic Intelligence)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS incidents (
@@ -91,6 +128,12 @@ class DatabaseManager:
             )
         ''')
         
+        # Optimization Indexes
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inc_ts ON incidents(timestamp)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inc_cam ON incidents(camera_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inc_sev ON incidents(severity)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_inc_corr ON incidents(correlation_id)")
+
         # Migration: Ensure new columns exist for v1 databases
         try:
             cursor.execute("ALTER TABLE incidents ADD COLUMN correlation_id TEXT")
@@ -113,6 +156,7 @@ class DatabaseManager:
                 ip_address TEXT
             )
         ''')
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(timestamp)")
         
         # System health/logs
         cursor.execute('''
