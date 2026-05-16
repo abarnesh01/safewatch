@@ -24,6 +24,7 @@ from threats.threat_engine import ThreatEngine
 from alerts.alert_manager import AlertManager
 from alerts.snapshot_builder import SnapshotBuilder
 from alerts.telegram_bot import TelegramAlertBot
+from utils.observability import ObservabilityEngine
 
 
 class SafeWatchApp:

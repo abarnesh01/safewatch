@@ -83,7 +83,8 @@ class ThreatEngine:
         self._confirmation_frames = threat_cfg.get("confirmation_frames", 3)
         self._threat_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=self._smoothing_frames))
 
-        # Profiling state
+        # Profiling & Observability
+        self._obs = ObservabilityEngine()
         self._profiler: dict[str, list[float]] = defaultdict(list)
 
         logger.info(
@@ -136,12 +137,18 @@ class ThreatEngine:
             # Profiling logic
             def profiled_run(name, detector_func, *args):
                 start = time.time()
-                res = detector_func(*args)
-                lat = (time.time() - start) * 1000
-                with self._lock:
-                    self._profiler[name].append(lat)
-                    if len(self._profiler[name]) > 100: self._profiler[name].pop(0)
-                return res
+                try:
+                    res = detector_func(*args)
+                    lat = (time.time() - start) * 1000
+                    self._obs.record_latency(name, lat)
+                    with self._lock:
+                        self._profiler[name].append(lat)
+                        if len(self._profiler[name]) > 100: self._profiler[name].pop(0)
+                    return res
+                except Exception as e:
+                    self._obs.record_error(name)
+                    logger.error(f"Detector '{name}' execution trace failure: {e}")
+                    raise
 
             for name in ["fight", "fall", "harassment", "assault", "unconscious", "abuse"]:
                 detector = self._get_detector(name)
