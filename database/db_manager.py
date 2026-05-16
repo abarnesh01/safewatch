@@ -71,7 +71,7 @@ class DatabaseManager:
         conn = self._get_connection()
         cursor = conn.cursor()
         
-        # Incidents table
+        # Incidents table (v2 - Forensic Intelligence)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS incidents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,7 +82,35 @@ class DatabaseManager:
                 confidence REAL,
                 snapshot_path TEXT,
                 description TEXT,
-                acknowledged INTEGER DEFAULT 0
+                acknowledged INTEGER DEFAULT 0,
+                correlation_id TEXT,
+                parent_incident_id INTEGER,
+                operator_notes TEXT,
+                tags TEXT,
+                metadata_json TEXT
+            )
+        ''')
+        
+        # Migration: Ensure new columns exist for v1 databases
+        try:
+            cursor.execute("ALTER TABLE incidents ADD COLUMN correlation_id TEXT")
+            cursor.execute("ALTER TABLE incidents ADD COLUMN parent_incident_id INTEGER")
+            cursor.execute("ALTER TABLE incidents ADD COLUMN operator_notes TEXT")
+            cursor.execute("ALTER TABLE incidents ADD COLUMN tags TEXT")
+            cursor.execute("ALTER TABLE incidents ADD COLUMN metadata_json TEXT")
+        except sqlite3.OperationalError:
+            pass # Columns already exist
+
+        # Audit Logs (Enterprise Requirement)
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                operator_id TEXT,
+                action TEXT,
+                target_id TEXT,
+                details TEXT,
+                ip_address TEXT
             )
         ''')
         

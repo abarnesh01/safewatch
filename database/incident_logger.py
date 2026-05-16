@@ -12,16 +12,25 @@ class IncidentEvent:
     confidence: float
     snapshot_path: str = ""
     description: str = ""
-    timestamp: datetime = datetime.now()
+    timestamp: datetime = field(default_factory=datetime.now)
+    correlation_id: str = ""
+    parent_incident_id: int = 0
+    tags: str = ""
+    metadata: dict = field(default_factory=dict)
 
 class IncidentLogger:
     def __init__(self, db_manager: DatabaseManager = None):
         self.db = db_manager or DatabaseManager()
 
     def log_incident(self, event: IncidentEvent):
+        import json
         query = """
-            INSERT INTO incidents (camera_id, threat_type, severity, confidence, snapshot_path, description, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO incidents (
+                camera_id, threat_type, severity, confidence, 
+                snapshot_path, description, timestamp,
+                correlation_id, parent_incident_id, tags, metadata_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             event.camera_id,
@@ -30,13 +39,22 @@ class IncidentLogger:
             event.confidence,
             str(event.snapshot_path),
             event.description,
-            event.timestamp.isoformat()
+            event.timestamp.isoformat(),
+            event.correlation_id,
+            event.parent_incident_id,
+            event.tags,
+            json.dumps(event.metadata)
         )
         try:
             self.db.execute(query, params)
-            logger.info(f"Incident logged: {event.threat_type} on {event.camera_id} (Severity: {event.severity})")
+            logger.info(f"Incident logged: {event.threat_type} on {event.camera_id} (CorrID: {event.correlation_id})")
         except Exception as e:
             logger.error(f"Failed to log incident: {e}")
+
+    def add_audit_log(self, operator_id: str, action: str, target_id: str = "", details: str = ""):
+        query = "INSERT INTO audit_logs (operator_id, action, target_id, details) VALUES (?, ?, ?, ?)"
+        self.db.execute(query, (operator_id, action, target_id, details))
+        logger.debug(f"Audit Log: {operator_id} performed {action} on {target_id}")
 
     def get_recent_incidents(self, limit: int = 50):
         query = "SELECT * FROM incidents ORDER BY timestamp DESC LIMIT ?"
