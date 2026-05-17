@@ -4,9 +4,10 @@ Thorough unit tests for behavioral intelligence and threat detection logic.
 """
 
 import unittest
+import time
 import numpy as np
 from detection.person_detector import Person
-from detection.pose_estimator import PoseResult
+from detection.pose_estimator import PoseResult, KEYPOINT_NAMES
 from classifier.velocity_tracker import VelocityTracker
 from threats.fight_detector import FightDetector
 from threats.fall_detector import FallDetector
@@ -51,10 +52,12 @@ class TestSafeWatchDetectors(unittest.TestCase):
             landmarks[23]["y"] = 0.8 # left_hip
             landmarks[24]["y"] = 0.8 # right_hip
         
+        keypoints = {KEYPOINT_NAMES[i]: landmarks[i] for i in range(len(landmarks))}
+        
         return PoseResult(
             person_id=pid,
             landmarks=landmarks,
-            keypoints={},
+            keypoints=keypoints,
             bbox=(0,0,100,100),
             confidence=0.9
         )
@@ -65,11 +68,16 @@ class TestSafeWatchDetectors(unittest.TestCase):
         p1 = self.create_mock_person(1, center=(100, 100))
         p2 = self.create_mock_person(2, center=(110, 100)) # Very close
         
-        # Mock high velocity
-        self.velocity_tracker.update(1, (100, 100), {"left_wrist": (150, 150)})
-        self.velocity_tracker.update(2, (110, 100), {"right_wrist": (200, 200)})
+        pose1 = self.create_mock_pose(1)
+        pose2 = self.create_mock_pose(2)
+        # Update keypoints to have wrist coordinates that reflect high velocity
+        pose1.keypoints["left_wrist"] = {"x": 0.5, "y": 0.5, "abs_x": 150, "abs_y": 150, "visibility": 0.9}
+        pose2.keypoints["right_wrist"] = {"x": 0.5, "y": 0.5, "abs_x": 200, "abs_y": 200, "visibility": 0.9}
         
-        events = detector.detect([p1, p2], [], self.velocity_tracker)
+        self.velocity_tracker.update(1, pose1, time.time())
+        self.velocity_tracker.update(2, pose2, time.time())
+        
+        events = detector.detect([p1, p2], [pose1, pose2], self.velocity_tracker)
         self.assertTrue(len(events) >= 0) # Logic should at least execute without error
 
     def test_fall_state_machine(self):
@@ -98,9 +106,12 @@ class TestSafeWatchDetectors(unittest.TestCase):
         p1 = self.create_mock_person(1, center=(100, 100))
         p2 = self.create_mock_person(2, center=(110, 100))
         
+        pose1 = self.create_mock_pose(1)
+        pose2 = self.create_mock_pose(2)
+        
         # Simulate multiple frames
         for _ in range(10):
-            detector.detect([p1, p2], [], self.velocity_tracker)
+            detector.detect([p1, p2], [pose1, pose2], self.velocity_tracker)
         
         state = detector._pair_tracking[(1, 2)]
         self.assertEqual(state["proximity_frames"], 10)

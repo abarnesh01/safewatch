@@ -29,18 +29,24 @@ class TestSafeWatchCapture(unittest.TestCase):
 
     def test_stream_manager_orchestration(self):
         """Test StreamManager's ability to manage multiple cameras."""
-        manager = StreamManager()
-        manager.add_camera("cam1", source=0, camera_name="Front")
-        manager.add_camera("cam2", source=1, camera_name="Back")
+        config = {
+            "cameras": [
+                {"id": "cam1", "name": "Front", "source": 0, "enabled": True},
+                {"id": "cam2", "name": "Back", "source": 1, "enabled": True}
+            ]
+        }
+        manager = StreamManager(config)
         
-        self.assertEqual(manager.get_camera_count(), 2)
-        ids = manager.get_camera_ids()
+        ids = manager.get_all_camera_ids()
+        self.assertEqual(len(ids), 2)
         self.assertIn("cam1", ids)
         self.assertIn("cam2", ids)
         
         # Test individual status
-        status1 = manager.get_camera_status("cam1")
-        self.assertEqual(status1["name"], "Front")
+        status = manager.get_status()
+        self.assertIn("cam1", status)
+        self.assertIn("cam2", status)
+        self.assertEqual(status["cam1"]["camera_id"], "cam1")
         
         # Cleanup
         manager.stop_all()
