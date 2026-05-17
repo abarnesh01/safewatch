@@ -167,9 +167,9 @@ class SafeWatchApp:
                     ps_start = time.time()
                     poses = {}
                     for p in persons:
-                        pose = self._pose_estimator.estimate(frame_packet.frame, p.person_id, p.bbox)
+                        pose = self._pose_estimator.estimate(frame_packet.frame, p.id, p.bbox)
                         if pose:
-                            poses[p.person_id] = pose
+                            poses[p.id] = pose
                     self._obs.record_breakdown("PoseEstimation", (time.time() - ps_start) * 1000)
                     
                     f_start = time.time()
@@ -204,8 +204,8 @@ class SafeWatchApp:
                     vt = self._velocity_trackers[cam_id]
                     ts = time.time()
                     for p in persons:
-                        if p.person_id in poses:
-                            vt.update(p.person_id, poses[p.person_id], ts)
+                        if p.id in poses:
+                            vt.update(p.id, poses[p.id], ts)
                             
                     report = self._threat_engine.analyze({
                         "frame": frame_packet.frame,
