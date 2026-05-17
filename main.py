@@ -204,8 +204,6 @@ class SafeWatchApp:
                     self._update_telemetry(cam_id, latency)
                     
                     # 3. Threat Detection
-<<<<<<< HEAD
-                    # ... (rest of the loop)
                     if cam_id not in self._velocity_trackers:
                         self._velocity_trackers[cam_id] = VelocityTracker()
                     vt = self._velocity_trackers[cam_id]
@@ -215,7 +213,7 @@ class SafeWatchApp:
                             vt.update(p.id, poses[p.id], ts)
                             
                     report = self._threat_engine.analyze({
-                        "frame": frame_packet.frame,
+                        "frame": frame,
                         "camera_id": cam_id,
                         "timestamp": ts,
                         "persons": persons,
@@ -224,34 +222,21 @@ class SafeWatchApp:
                         "velocity_tracker": vt
                     })
                     events = report.threats_detected
-=======
-                    threat_report = self._threat_engine.analyze({
-                        "camera_id": cam_id,
-                        "frame": frame,
-                        "persons": persons,
-                        "poses": poses,
-                        "flow_result": flow,
-                        "velocity_tracker": None # TODO: Add velocity tracker if needed
-                    })
-                    events = threat_report.threats_detected
->>>>>>> 5c0b045 (feat: update OpticalFlowAnalyzer initialization to accept configuration and add worktree validation check to startup sequence)
                     
-                    # 3. Alert Handling
+                    # 4. Alert Handling
                     if events:
-                        await self._alert_manager.handle_threats(
-                            events, frame_packet.frame, frame_packet.camera_name
-                        )
+                        self._alert_manager.process_threat_report(report, frame)
                         # Log to DB
                         for e in events:
-                            self._incident_logger.log_incident(
+                            from database.incident_logger import IncidentEvent
+                            incident = IncidentEvent(
                                 camera_id=cam_id,
-                                camera_name=frame_packet.camera_name,
                                 threat_type=e.threat_type,
                                 severity=e.severity,
                                 confidence=e.confidence,
-                                risk_level=e.severity,
                                 description=e.description
                             )
+                            self._incident_logger.log_incident(incident)
 
                 await asyncio.sleep(0.01) # Load balancing
                 
