@@ -20,6 +20,7 @@ from capture.stream_manager import StreamManager
 from detection.person_detector import PersonDetector
 from detection.pose_estimator import PoseEstimator
 from detection.optical_flow import OpticalFlowAnalyzer
+from classifier.velocity_tracker import VelocityTracker
 from threats.threat_engine import ThreatEngine
 from alerts.alert_manager import AlertManager
 from alerts.snapshot_builder import SnapshotBuilder
@@ -53,6 +54,7 @@ class SafeWatchApp:
         self._pose_estimator = PoseEstimator(config=self._config, device=self._device)
         self._flow_analyzers = {}
         self._prev_frames = {}
+        self._velocity_trackers = {}
         
         # 4. Initialize Engines
         self._threat_engine = ThreatEngine(self._config, zone_manager=None) # ZoneManager initialized later
@@ -197,9 +199,24 @@ class SafeWatchApp:
                     
                     # 3. Threat Detection
                     # ... (rest of the loop)
-                    events = self._threat_engine.process_frame_data(
-                        cam_id, persons, poses, flow
-                    )
+                    if cam_id not in self._velocity_trackers:
+                        self._velocity_trackers[cam_id] = VelocityTracker()
+                    vt = self._velocity_trackers[cam_id]
+                    ts = time.time()
+                    for p in persons:
+                        if p.person_id in poses:
+                            vt.update(p.person_id, poses[p.person_id], ts)
+                            
+                    report = self._threat_engine.analyze({
+                        "frame": frame_packet.frame,
+                        "camera_id": cam_id,
+                        "timestamp": ts,
+                        "persons": persons,
+                        "poses": poses,
+                        "flow_result": flow,
+                        "velocity_tracker": vt
+                    })
+                    events = report.threats_detected
                     
                     # 3. Alert Handling
                     if events:
