@@ -12,38 +12,9 @@ class AuthManager:
         self.db = db_manager
         self.secret_key = secret_key
         self.timeout_minutes = timeout_minutes
-        self._ensure_admin_exists()
-
-    def _ensure_admin_exists(self):
-        """Creates default admin if no users exist in database."""
-        # Check if users table exists and has entries
-        query = "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='users'"
-        cursor = self.db.execute(query)
-        if cursor and cursor.fetchone()[0] == 0:
-            self._create_users_table()
-        
-        cursor = self.db.execute("SELECT count(*) FROM users")
-        if cursor and cursor.fetchone()[0] == 0:
-            admin_user = os.getenv("DEFAULT_ADMIN_USER", "admin")
-            admin_pass = os.getenv("DEFAULT_ADMIN_PASS", "safewatch_admin_2026")
-            hashed_pw = self.hash_password(admin_pass)
-            self.db.execute(
-                "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-                (admin_user, hashed_pw, "Admin")
-            )
-            logger.info("Default admin user created.")
-
-    def _create_users_table(self):
-        self.db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password_hash TEXT NOT NULL,
-                role TEXT NOT NULL,
-                last_login TEXT,
-                failed_attempts INTEGER DEFAULT 0
-            )
-        """)
+        self.users = {
+            "admin": self.hash_password("admin123")
+        }
 
     def hash_password(self, password: str) -> str:
         salt = bcrypt.gensalt()
@@ -54,32 +25,21 @@ class AuthManager:
         return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
     def login(self, username, password):
-        cursor = self.db.execute("SELECT id, password_hash, role, failed_attempts FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone() if cursor else None
-
-        if not user:
+        if username not in self.users:
             logger.warning(f"Failed login attempt for unknown user: {username}")
             return False, "Invalid username or password"
+
+        hashed_pw = self.users[username]
         
-        user_id, pwd_hash, role, failed_attempts = user
-
-        if failed_attempts >= 5:
-            return False, "Account locked due to too many failed attempts"
-
-        if self.check_password(password, pwd_hash):
-            # Reset failed attempts
-            self.db.execute("UPDATE users SET failed_attempts = 0, last_login = ? WHERE id = ?", (datetime.now().isoformat(), user_id))
-            
+        if self.check_password(password, hashed_pw):
             # Setup session
             st.session_state['authenticated'] = True
             st.session_state['username'] = username
-            st.session_state['role'] = role
+            st.session_state['role'] = "Admin"
             st.session_state['login_time'] = datetime.now()
-            logger.info(f"User {username} logged in successfully as {role}.")
+            logger.info(f"User {username} logged in successfully as Admin.")
             return True, "Success"
         else:
-            # Increment failed attempts
-            self.db.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE id = ?", (user_id,))
             logger.warning(f"Failed login attempt for user: {username}")
             return False, "Invalid username or password"
 
