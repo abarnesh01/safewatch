@@ -30,6 +30,11 @@ class AlertManager:
         telegram_config = config.get("telegram", {})
         self._cooldown_seconds = telegram_config.get("alert_cooldown_seconds", 30)
         self._send_snapshot = telegram_config.get("send_snapshot", True)
+        
+        # Webhook Setup
+        from alerts.webhook_manager import WebhookManager
+        self._webhook_manager = WebhookManager(self._config)
+        self._webhook_manager.start()
 
         self._cooldowns: dict[str, float] = defaultdict(float)
         self._active_alerts: list[dict] = []
