@@ -166,6 +166,12 @@ class AlertManager:
             except Exception:
                 logger.error(f"Alert queue overflow! Dropping {threat.threat_type}")
 
+            # 5. Broadcast to WebSocket and Webhooks
+            from api.websocket_manager import ws_manager
+            asyncio.run_coroutine_threadsafe(ws_manager.broadcast("INCIDENT_DETECTED", threat_dict), asyncio.get_event_loop())
+            if hasattr(self, '_webhook_manager'):
+                asyncio.run_coroutine_threadsafe(self._webhook_manager.dispatch(threat_dict), asyncio.get_event_loop())
+
             self._record_event(threat, camera_id, incident_id)
             self._alert_counter += 1
 
