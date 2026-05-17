@@ -235,11 +235,11 @@ class SafeWatchApp:
         if cpu > 85.0:
             logger.warning(f"High CPU detected ({cpu}%). Throttling inference sampling...")
             for sampler in self._stream_manager._samplers.values():
-                sampler.frame_skip = min(30, sampler.frame_skip + 1)
+                sampler.update_skip_rate(min(30, sampler._frame_skip + 1))
         elif cpu < 40.0:
             # Gradually recover if idle
             for sampler in self._stream_manager._samplers.values():
-                sampler.frame_skip = max(5, sampler.frame_skip - 1)
+                sampler.update_skip_rate(max(5, sampler._frame_skip - 1))
 
         logger.debug(f"Telemetry [{cam_id}]: Latency={latency:.1f}ms CPU={cpu}% RAM={ram}%")
 
