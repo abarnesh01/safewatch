@@ -68,7 +68,8 @@ class TestSafeWatchAlerts(unittest.TestCase):
             camera_id="test_cam",
             timestamp=1700000000.0,
             threats_detected=[threat],
-            execution_time_ms=5.0
+            annotated_frame=None,
+            overall_risk_level="HIGH"
         )
         
         # Process report
