@@ -22,7 +22,7 @@ class IncidentLogger:
     def __init__(self, db_manager: DatabaseManager = None):
         self.db = db_manager or DatabaseManager()
 
-    def log_incident(self, event: IncidentEvent):
+    def log_incident(self, event: IncidentEvent) -> Optional[int]:
         import json
         query = """
             INSERT INTO incidents (
@@ -46,10 +46,12 @@ class IncidentLogger:
             json.dumps(event.metadata)
         )
         try:
-            self.db.execute(query, params)
+            cursor = self.db.execute(query, params)
             logger.info(f"Incident logged: {event.threat_type} on {event.camera_id} (CorrID: {event.correlation_id})")
+            return cursor.lastrowid
         except Exception as e:
             logger.error(f"Failed to log incident: {e}")
+            return None
 
     def add_audit_log(self, operator_id: str, action: str, target_id: str = "", details: str = ""):
         query = "INSERT INTO audit_logs (operator_id, action, target_id, details) VALUES (?, ?, ?, ?)"
