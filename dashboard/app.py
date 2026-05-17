@@ -18,6 +18,51 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from utils.config_manager import ConfigManager
 from utils.auth_manager import AuthManager
 
+# ─── Page Config ──────────────────────────────────────────────────
+st.set_page_config(
+    page_title="SafeWatch — AI CCTV Monitoring",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ─── Custom CSS ───────────────────────────────────────────────────
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    .metric-card {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #2a2a4a;
+        margin-bottom: 10px;
+    }
+    .threat-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-weight: bold;
+        font-size: 0.85em;
+    }
+    .severity-low { background-color: #2d5016; color: #7dd56f; }
+    .severity-medium { background-color: #5a3e00; color: #ffb142; }
+    .severity-high { background-color: #5a1616; color: #ff6b6b; }
+    .severity-critical { background-color: #4a0e4a; color: #ff6bff; }
+    .status-online { color: #00ff88; }
+    .status-offline { color: #ff4444; }
+    .header-banner {
+        background: linear-gradient(90deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+        text-align: center;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # ─── Initialization ──────────────────────────────────────────────────
 config_mgr = ConfigManager()
 db_path = RuntimePath.LOGS / "safewatch.db"
