@@ -46,6 +46,9 @@ class CameraStream:
         self._last_frame_time = 0.0
         self._reconnect_delay = reconnect_delay
         self._last_read_frame: Optional[np.ndarray] = None
+        self._reconnect_count = 0
+        self._watchdog_thread: Optional[threading.Thread] = None
+        self._watchdog_interval = 10.0
         logger.info(f"CameraStream created: id={camera_id} source={source} name={name}")
 
     def __repr__(self) -> str:
@@ -208,7 +211,31 @@ class CameraStream:
             daemon=True,
         )
         self._thread.start()
-        logger.info(f"[{self._camera_id}] Camera stream started")
+
+        self._watchdog_thread = threading.Thread(
+            target=self._watchdog_loop,
+            name=f"Watchdog-{self._camera_id}",
+            daemon=True,
+        )
+        self._watchdog_thread.start()
+        logger.info(f"[{self._camera_id}] Camera stream and watchdog started")
+
+    def _watchdog_loop(self):
+        """Watchdog to detect and recover from frozen streams."""
+        while self._running:
+            time.sleep(self._watchdog_interval)
+            if not self._running: break
+
+            now = time.time()
+            if self._connected and (now - self._last_frame_time > self._watchdog_interval):
+                logger.warning(f"[{self._camera_id}] Watchdog detected stalled stream (no frames for {now - self._last_frame_time:.1f}s). Restarting...")
+                self._reconnect_count += 1
+                self._connected = False
+                if self._capture:
+                    try:
+                        self._capture.release()
+                    except:
+                        pass
 
     def stop(self):
         """Stop the camera capture thread and release resources."""
@@ -276,4 +303,5 @@ class CameraStream:
             "buffer_size": self._buffer.qsize(),
             "resolution": self._resolution,
             "last_frame_time": self._last_frame_time,
+            "reconnect_count": self._reconnect_count,
         }
