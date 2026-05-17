@@ -1883,3 +1883,14 @@
 2026-05-16 18:11:21.690 | INFO     | capture.stream_manager:__init__:33 - StreamManager initialized with 1 cameras
 2026-05-16 18:11:25.878 | INFO     | detection.person_detector:_load_model:64 - YOLOv8 model loaded from yolov8n.pt
 2026-05-16 18:11:26.375 | INFO     | detection.pose_estimator:__init__:106 - PoseEstimator initialized (smoothing=5 frames)
+2026-05-17 10:31:32.784 | WARNING  | __main__:_validate_worktree:125 - Repository worktree is DIRTY. Please commit or stash changes before running production.
+2026-05-17 10:31:32.786 | ERROR    | __main__:_validate_worktree:134 - DETECTION FAILURE: Runtime artifacts are being tracked by Git!
+2026-05-17 10:31:32.786 | ERROR    | __main__:_validate_worktree:135 - Fix: Run 'git rm -r --cached <dir>' and update .gitignore
+2026-05-17 10:31:32.844 | INFO     | __main__:_detect_hardware:100 - Hardware Acceleration: CPU only
+2026-05-17 10:31:32.845 | INFO     | database.db_manager:__init__:34 - Database initialized at logs/safewatch.db with analytics caching
+2026-05-17 10:31:32.845 | INFO     | capture.camera_stream:__init__:49 - CameraStream created: id=cam_01 source=0 name=Front Entrance
+2026-05-17 10:31:32.845 | INFO     | capture.frame_sampler:__init__:78 - FrameSampler initialized for cam_01: adaptive=True, base_threshold=500.0
+2026-05-17 10:31:32.845 | INFO     | capture.stream_manager:_init_streams:70 - Camera configured: cam_01 (Front Entrance)
+2026-05-17 10:31:32.845 | INFO     | capture.stream_manager:__init__:33 - StreamManager initialized with 1 cameras
+2026-05-17 10:31:35.980 | INFO     | detection.person_detector:_load_model:64 - YOLOv8 model loaded from yolov8n.pt
+2026-05-17 10:31:36.120 | INFO     | detection.pose_estimator:__init__:106 - PoseEstimator initialized (smoothing=5 frames)

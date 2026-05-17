@@ -51,7 +51,7 @@ class SafeWatchApp:
             device=self._device
         )
         self._pose_estimator = PoseEstimator(config=self._config, device=self._device)
-        self._flow_analyzer = OpticalFlowAnalyzer()
+        self._flow_analyzer = OpticalFlowAnalyzer(self._config)
         
         # 4. Initialize Engines
         self._threat_engine = ThreatEngine(self._config, zone_manager=None) # ZoneManager initialized later
