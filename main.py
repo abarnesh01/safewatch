@@ -51,7 +51,8 @@ class SafeWatchApp:
             device=self._device
         )
         self._pose_estimator = PoseEstimator(config=self._config, device=self._device)
-        self._flow_analyzer = OpticalFlowAnalyzer(self._config)
+        self._flow_analyzers = {}
+        self._prev_frames = {}
         
         # 4. Initialize Engines
         self._threat_engine = ThreatEngine(self._config, zone_manager=None) # ZoneManager initialized later
@@ -177,7 +178,14 @@ class SafeWatchApp:
                     self._obs.record_breakdown("PoseEstimation", (time.time() - ps_start) * 1000)
                     
                     f_start = time.time()
-                    flow = self._flow_analyzer.analyze(frame_packet.frame)
+                    if cam_id not in self._flow_analyzers:
+                        self._flow_analyzers[cam_id] = OpticalFlowAnalyzer(self._config)
+                        self._prev_frames[cam_id] = frame_packet.frame
+                        
+                    prev_frame = self._prev_frames[cam_id]
+                    curr_frame = frame_packet.frame
+                    flow = self._flow_analyzers[cam_id].analyze(prev_frame, curr_frame)
+                    self._prev_frames[cam_id] = curr_frame
                     self._obs.record_breakdown("OpticalFlow", (time.time() - f_start) * 1000)
                     
                     latency = (time.time() - start_time) * 1000
