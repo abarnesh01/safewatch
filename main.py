@@ -143,21 +143,14 @@ class SafeWatchApp:
         logger.info("Starting SafeWatch surveillance engine...")
         self._incident_logger.add_audit_log("SYSTEM", "ENGINE_START", "PROCESS", "SafeWatch surveillance engine initialized")
         
-        # Add cameras from config
-        for cam_cfg in self._config["cameras"]:
-            if cam_cfg["enabled"]:
-                self._stream_manager.add_camera(
-                    camera_id=cam_cfg["id"],
-                    source=cam_cfg["source"],
-                    camera_name=cam_cfg["name"]
-                )
+
         
         self._stream_manager.start_all()
         
         try:
             while self._running:
                 # Process each camera stream
-                for cam_id in self._stream_manager.get_camera_ids():
+                for cam_id in self._stream_manager.get_all_camera_ids():
                     frame_packet = self._stream_manager.get_latest_frame(cam_id)
                     if not frame_packet:
                         continue
