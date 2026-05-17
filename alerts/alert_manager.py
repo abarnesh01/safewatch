@@ -7,7 +7,7 @@ from datetime import datetime
 from loguru import logger
 from alerts.telegram_bot import SafeWatchTelegramBot
 from alerts.snapshot_builder import SnapshotBuilder
-from database.incident_logger import IncidentLogger
+from database.incident_logger import IncidentLogger, IncidentEvent
 from threats.threat_engine import ThreatReport
 
 class AlertManager:
@@ -120,10 +120,36 @@ class AlertManager:
                         snapshot_bytes, camera_id, threat_report.timestamp,
                     )
 
-            incident_id = self._logger.log_threat(threat_dict, camera_id, snapshot_path=snapshot_path)
+            # Standardize timestamp
+            evt_ts = datetime.now()
+            if hasattr(threat, "timestamp") and threat.timestamp:
+                if isinstance(threat.timestamp, (int, float)):
+                    evt_ts = datetime.fromtimestamp(threat.timestamp)
+                elif isinstance(threat.timestamp, datetime):
+                    evt_ts = threat.timestamp
+                elif isinstance(threat.timestamp, str):
+                    try:
+                        evt_ts = datetime.strptime(threat.timestamp, "%d/%m/%Y %H:%M:%S")
+                    except ValueError:
+                        try:
+                            evt_ts = datetime.fromisoformat(threat.timestamp)
+                        except ValueError:
+                            pass
+
+            incident_event = IncidentEvent(
+                camera_id=camera_id,
+                threat_type=threat.threat_type,
+                severity=threat.severity,
+                confidence=threat.confidence,
+                snapshot_path=snapshot_path,
+                description=threat.description,
+                timestamp=evt_ts,
+                metadata=threat_dict
+            )
+            incident_id = self._logger.log_incident(incident_event)
 
             # 4. Auto Forensic Export for CRITICAL
-            if is_critical:
+            if is_critical and incident_id is not None:
                 threading.Thread(target=self._logger.export_forensic_bundle, args=(incident_id,), daemon=True).start()
 
             alert_data = {

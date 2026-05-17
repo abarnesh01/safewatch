@@ -7,22 +7,52 @@ import unittest
 from pathlib import Path
 from alerts.snapshot_builder import SnapshotBuilder
 from alerts.alert_manager import AlertManager
+from database.db_manager import DatabaseManager
+from database.incident_logger import IncidentLogger
+from utils.runtime_isolation import RuntimePath
 from threats.fight_detector import ThreatEvent
+from threats.threat_engine import ThreatReport
 
 class TestSafeWatchAlerts(unittest.TestCase):
     """Tests for the alerting and snapshot system."""
 
+    def setUp(self):
+        # Activate isolation directories for testing
+        RuntimePath.ensure_isolation()
+        self.config = {
+            "system": {
+                "name": "SafeWatch Test"
+            },
+            "alerts": {
+                "telegram_enabled": False,
+                "snapshot_enabled": True,
+                "min_severity": "LOW"
+            },
+            "telegram": {
+                "alert_cooldown_seconds": 1,
+                "send_snapshot": False,
+                "deduplication_window": 0.5,
+                "agents": {}
+            },
+            "cameras": [
+                {"id": "test_cam", "name": "Test Cam"}
+            ]
+        }
+        self.db = DatabaseManager(":memory:")
+        self.logger = IncidentLogger(self.db)
+
     def test_snapshot_builder_paths(self):
         """Test SnapshotBuilder directory management."""
-        out_dir = "logs/test_snaps"
-        builder = SnapshotBuilder() # Default uses logs/snapshots
-        self.assertTrue(Path("logs/snapshots").exists())
+        builder = SnapshotBuilder()
+        self.assertTrue(RuntimePath.SNAPSHOTS.exists())
 
     def test_alert_manager_cooldown(self):
         """Test that AlertManager respects threat cooldowns."""
-        # This would require more mocking of the bot, but we can test init
-        manager = AlertManager(telegram_bot=None, snapshot_builder=SnapshotBuilder())
-        self.assertFalse(manager._telegram_enabled)
+        manager = AlertManager(
+            config=self.config,
+            telegram_bot=None,
+            incident_logger=self.logger
+        )
         
         # Test threat handling doesn't crash without bot
         threat = ThreatEvent(
@@ -34,13 +64,20 @@ class TestSafeWatchAlerts(unittest.TestCase):
             severity="HIGH"
         )
         
-        import asyncio
-        loop = asyncio.new_event_loop()
-        try:
-            # Should just log and return since telegram is disabled
-            loop.run_until_complete(manager.handle_threats([threat], None, "Test Cam"))
-        finally:
-            loop.close()
+        report = ThreatReport(
+            camera_id="test_cam",
+            timestamp=1700000000.0,
+            threats_detected=[threat],
+            execution_time_ms=5.0
+        )
+        
+        # Process report
+        manager.process_threat_report(report, frame=None)
+        
+        # Verify it got logged
+        incidents = self.logger.get_recent_incidents(10)
+        self.assertEqual(len(incidents), 1)
+        self.assertEqual(incidents[0]["threat_type"], "FIGHT")
 
 if __name__ == "__main__":
     unittest.main()
