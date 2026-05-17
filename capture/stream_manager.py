@@ -7,6 +7,14 @@ import time
 import threading
 from typing import Optional
 from collections import defaultdict
+from dataclasses import dataclass
+
+@dataclass
+class FramePacket:
+    frame: 'np.ndarray'
+    camera_id: str
+    camera_name: str
+    has_motion: bool = True
 
 import numpy as np
 from loguru import logger
@@ -114,6 +122,25 @@ class StreamManager:
         if stream is None:
             return None
         return stream.read()
+
+    def get_latest_frame(self, camera_id: str) -> Optional[FramePacket]:
+        """
+        Get the latest FramePacket from a specific camera.
+        """
+        frame = self.get_frame(camera_id)
+        if frame is None:
+            return None
+            
+        stream = self.get_stream(camera_id)
+        if stream is None:
+            return None
+            
+        return FramePacket(
+            frame=frame,
+            camera_id=camera_id,
+            camera_name=stream.name,
+            has_motion=True
+        )
 
     def get_sampler(self, camera_id: str) -> Optional[FrameSampler]:
         """Get the frame sampler for a camera."""
