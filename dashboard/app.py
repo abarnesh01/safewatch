@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from utils.config_manager import ConfigManager
 from utils.auth_manager import AuthManager
+from database.db_manager import DatabaseManager
+from utils.runtime_isolation import RuntimePath
 
 # ─── Page Config ──────────────────────────────────────────────────
 st.set_page_config(
