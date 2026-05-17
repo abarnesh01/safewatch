@@ -61,6 +61,11 @@ class CameraStream:
         return self._camera_id
 
     @property
+    def resolution(self) -> tuple[int, int]:
+        return self._resolution
+        return self._camera_id
+
+    @property
     def name(self) -> str:
         return self._name
 
