@@ -167,6 +167,14 @@ class FrameSampler:
                 "scene_profile": self._scene_learner.get_profile()
             }
 
+    @property
+    def frame_skip(self) -> int:
+        return self._frame_skip
+
+    @frame_skip.setter
+    def frame_skip(self, value: int):
+        self.update_skip_rate(value)
+
     def update_skip_rate(self, n: int):
         """
         Dynamically adjust the frame skip rate.

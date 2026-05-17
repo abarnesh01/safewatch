@@ -147,37 +147,44 @@ class SafeWatchApp:
         logger.info("Starting SafeWatch surveillance engine...")
         self._incident_logger.add_audit_log("SYSTEM", "ENGINE_START", "PROCESS", "SafeWatch surveillance engine initialized")
         
-
-        
+        # Streams are already initialized in StreamManager.__init__
         self._stream_manager.start_all()
         
         try:
             while self._running:
                 # Process each camera stream
                 for cam_id in self._stream_manager.get_all_camera_ids():
-                    frame_packet = self._stream_manager.get_latest_frame(cam_id)
+                    sampler = self._stream_manager.get_sampler(cam_id)
+                    if not sampler:
+                        continue
+                    
+                    # Get frame from sampler (one frame at a time for this loop)
+                    # Note: In a real async app we might use a different pattern, 
+                    # but we'll follow the existing loop structure.
+                    frame_packet = next(sampler.get_frame(), None)
                     if not frame_packet:
                         continue
                     
                     # 1. AI Pipeline
                     start_time = time.time()
+                    frame = frame_packet["frame"]
                     
                     p_start = time.time()
-                    persons = self._person_detector.detect(frame_packet.frame)
+                    persons = self._person_detector.detect(frame)
                     self._obs.record_breakdown("PersonDetection", (time.time() - p_start) * 1000)
                     
                     ps_start = time.time()
-                    pose_results = self._pose_estimator.estimate(frame_packet.frame, persons)
+                    pose_results = self._pose_estimator.estimate(frame, persons)
                     poses = {pose.person_id: pose for pose in pose_results}
                     self._obs.record_breakdown("PoseEstimation", (time.time() - ps_start) * 1000)
                     
                     f_start = time.time()
                     if cam_id not in self._flow_analyzers:
                         self._flow_analyzers[cam_id] = OpticalFlowAnalyzer(self._config)
-                        self._prev_frames[cam_id] = frame_packet.frame
+                        self._prev_frames[cam_id] = frame
                         
                     prev_frame = self._prev_frames[cam_id]
-                    curr_frame = frame_packet.frame
+                    curr_frame = frame
                     flow = self._flow_analyzers[cam_id].analyze(prev_frame, curr_frame)
                     self._prev_frames[cam_id] = curr_frame
                     self._obs.record_breakdown("OpticalFlow", (time.time() - f_start) * 1000)
@@ -197,6 +204,7 @@ class SafeWatchApp:
                     self._update_telemetry(cam_id, latency)
                     
                     # 3. Threat Detection
+<<<<<<< HEAD
                     # ... (rest of the loop)
                     if cam_id not in self._velocity_trackers:
                         self._velocity_trackers[cam_id] = VelocityTracker()
@@ -216,6 +224,17 @@ class SafeWatchApp:
                         "velocity_tracker": vt
                     })
                     events = report.threats_detected
+=======
+                    threat_report = self._threat_engine.analyze({
+                        "camera_id": cam_id,
+                        "frame": frame,
+                        "persons": persons,
+                        "poses": poses,
+                        "flow_result": flow,
+                        "velocity_tracker": None # TODO: Add velocity tracker if needed
+                    })
+                    events = threat_report.threats_detected
+>>>>>>> 5c0b045 (feat: update OpticalFlowAnalyzer initialization to accept configuration and add worktree validation check to startup sequence)
                     
                     # 3. Alert Handling
                     if events:
