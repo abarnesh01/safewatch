@@ -15,81 +15,77 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from database.db_manager import DatabaseManager
-from database.incident_logger import IncidentLogger
-from utils.runtime_isolation import RuntimePath
+from utils.config_manager import ConfigManager
+from utils.auth_manager import AuthManager
 
+# ─── Initialization ──────────────────────────────────────────────────
+config_mgr = ConfigManager()
+db_path = RuntimePath.LOGS / "safewatch.db"
+db = DatabaseManager(str(db_path)) if db_path.exists() else None
 
-# ─── Page Config ──────────────────────────────────────────────────
-st.set_page_config(
-    page_title="SafeWatch — AI CCTV Monitoring",
-    page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+if not db:
+    st.warning("No database found. Start SafeWatch to initialize.")
+    st.stop()
 
-# ─── Custom CSS ───────────────────────────────────────────────────
-st.markdown("""
-<style>
-    .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border-radius: 12px;
-        padding: 20px;
-        border: 1px solid #2a2a4a;
-        margin-bottom: 10px;
-    }
-    .threat-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-weight: bold;
-        font-size: 0.85em;
-    }
-    .severity-low { background-color: #2d5016; color: #7dd56f; }
-    .severity-medium { background-color: #5a3e00; color: #ffb142; }
-    .severity-high { background-color: #5a1616; color: #ff6b6b; }
-    .severity-critical { background-color: #4a0e4a; color: #ff6bff; }
-    .status-online { color: #00ff88; }
-    .status-offline { color: #ff4444; }
-    .header-banner {
-        background: linear-gradient(90deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
-        padding: 20px;
-        border-radius: 10px;
-        margin-bottom: 20px;
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
+secret_key = config_mgr.get("security", {}).get("secret_key", "dev_secret_key")
+timeout = config_mgr.get("security", {}).get("session_timeout_minutes", 60)
+auth = AuthManager(db, secret_key, timeout)
+
+# ─── Authentication ──────────────────────────────────────────────────
+if not auth.check_session():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown('<div class="header-banner"><h1>🛡️ SafeWatch Login</h1></div>', unsafe_allow_html=True)
+        with st.form("login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login", use_container_width=True)
+            if submitted:
+                success, msg = auth.login(username, password)
+                if success:
+                    st.rerun()
+                else:
+                    st.error(msg)
+    st.stop()
+
+# ─── RBAC Setup ──────────────────────────────────────────────────
+role = st.session_state.get("role", "Viewer")
+all_pages = {
+    "🖥️ Live Monitor": ["Viewer", "Operator", "Admin"],
+    "📋 Incident History": ["Viewer", "Operator", "Admin"],
+    "🎬 Incident Replay": ["Operator", "Admin"],
+    "🧩 SOC Mosaic": ["Viewer", "Operator", "Admin"],
+    "📹 Camera Management": ["Admin"],
+    "🛠️ Detector Config": ["Admin"],
+    "📊 Detector Validation": ["Admin"],
+    "🛠️ Dev Diagnostics": ["Admin"],
+    "⚙️ System Settings": ["Admin"]
+}
+available_pages = [p for p, roles in all_pages.items() if role in roles]
 
 # ─── Sidebar ──────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🛡️ SafeWatch")
     st.markdown("**AI-Powered CCTV Monitoring**")
+    st.markdown(f"**Logged in as:** `{st.session_state.get('username')}` ({role})")
+    if st.button("Logout", use_container_width=True):
+        auth.logout()
+        st.rerun()
     st.markdown("---")
 
     page = st.radio(
         "Navigation",
-        ["🖥️ Live Monitor", "📋 Incident History", "🎬 Incident Replay", "🧩 SOC Mosaic", "📹 Camera Management", "🛠️ Detector Config", "📊 Detector Validation", "🛠️ Dev Diagnostics", "⚙️ System Settings"],
+        available_pages,
         label_visibility="collapsed",
     )
 
     st.markdown("---")
     st.markdown("### Quick Stats")
 
-    db_path = RuntimePath.LOGS / "safewatch.db"
-    if db_path.exists():
-        db = DatabaseManager(str(db_path))
-        stats = db.get_daily_stats()
-        st.metric("Today's Incidents", stats.get("total_incidents", 0))
-        st.metric("Cameras", len(db.get_camera_status()))
-    else:
-        st.info("No database found. Start SafeWatch to initialize.")
-        db = None
-        stats = {}
+    stats = db.get_daily_stats() or {}
+    st.metric("Today's Incidents", stats.get("total_incidents", 0))
+    cam_status = db.get_camera_status() or {}
+    st.metric("Cameras", len(cam_status))
 
 
 # ─── PAGE 1: Live Monitor ────────────────────────────────────────
