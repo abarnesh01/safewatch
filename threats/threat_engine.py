@@ -8,7 +8,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import cv2
 import numpy as np
