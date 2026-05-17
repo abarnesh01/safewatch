@@ -3,6 +3,8 @@ import httpx
 from typing import Dict, Any, List
 from loguru import logger
 
+import threading
+
 class WebhookManager:
     """Handles external HTTP webhook dispatching with retry logic."""
     
@@ -15,7 +17,15 @@ class WebhookManager:
         
     def start(self):
         self._running = True
-        asyncio.create_task(self._worker())
+        def run_loop():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._worker())
+
+        threading.Thread(
+            target=run_loop,
+            daemon=True
+        ).start()
         logger.info("WebhookManager started.")
         
     def stop(self):
