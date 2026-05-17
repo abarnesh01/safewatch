@@ -21,6 +21,7 @@ from detection.person_detector import PersonDetector
 from detection.pose_estimator import PoseEstimator
 from detection.optical_flow import OpticalFlowAnalyzer
 from classifier.velocity_tracker import VelocityTracker
+from detection.zone_manager import ZoneManager
 from threats.threat_engine import ThreatEngine
 from alerts.alert_manager import AlertManager
 from alerts.snapshot_builder import SnapshotBuilder
@@ -57,7 +58,8 @@ class SafeWatchApp:
         self._velocity_trackers = {}
         
         # 4. Initialize Engines
-        self._threat_engine = ThreatEngine(self._config, zone_manager=None) # ZoneManager initialized later
+        self._zone_manager = ZoneManager(self._config)
+        self._threat_engine = ThreatEngine(self._config, zone_manager=self._zone_manager)
         
         # 5. Initialize Alerting
         self._telegram_bot = None
@@ -209,7 +211,7 @@ class SafeWatchApp:
                         "camera_id": cam_id,
                         "timestamp": ts,
                         "persons": persons,
-                        "poses": poses,
+                        "poses": list(poses.values()),
                         "flow_result": flow,
                         "velocity_tracker": vt
                     })
