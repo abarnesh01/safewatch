@@ -1,3 +1,4 @@
+from typing import Optional
 from loguru import logger
 from .db_manager import DatabaseManager
 from dataclasses import dataclass, field
