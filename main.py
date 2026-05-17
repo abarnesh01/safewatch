@@ -165,11 +165,8 @@ class SafeWatchApp:
                     self._obs.record_breakdown("PersonDetection", (time.time() - p_start) * 1000)
                     
                     ps_start = time.time()
-                    poses = {}
-                    for p in persons:
-                        pose = self._pose_estimator.estimate(frame_packet.frame, p.id, p.bbox)
-                        if pose:
-                            poses[p.id] = pose
+                    pose_results = self._pose_estimator.estimate(frame_packet.frame, persons)
+                    poses = {pose.person_id: pose for pose in pose_results}
                     self._obs.record_breakdown("PoseEstimation", (time.time() - ps_start) * 1000)
                     
                     f_start = time.time()
