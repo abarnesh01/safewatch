@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  safewatch-core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: safewatch_core
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - SAFEWATCH_ENV=production
+    env_file:
+      - .env
+    volumes:
+      - safewatch_logs:/app/logs
+      - safewatch_snapshots:/app/snapshots
+      - safewatch_recordings:/app/recordings
+      - safewatch_cache:/app/runtime_cache
+    # For GPU Support (uncomment below if NVIDIA toolkit is installed)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  safewatch_logs:
+    name: safewatch_logs_volume
+  safewatch_snapshots:
+    name: safewatch_snapshots_volume
+  safewatch_recordings:
+    name: safewatch_recordings_volume
+  safewatch_cache:
+    name: safewatch_cache_volume
