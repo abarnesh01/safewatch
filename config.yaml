@@ -45,3 +45,9 @@ alerts:
 database:
   path: "logs/safewatch.db"
   backup_interval: 86400
+
+security:
+  secret_key: "development_secret_do_not_use_in_prod"
+  session_timeout_minutes: 60
+  default_admin_user: "admin"
+  default_admin_pass: "safewatch_admin_2026"
