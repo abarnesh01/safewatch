@@ -11,6 +11,7 @@ from typing import Optional, Union
 import cv2
 import numpy as np
 from loguru import logger
+from capture.video_buffer import RollingVideoBuffer
 
 
 class CameraStream:
@@ -49,6 +50,10 @@ class CameraStream:
         self._reconnect_count = 0
         self._watchdog_thread: Optional[threading.Thread] = None
         self._watchdog_interval = 10.0
+        
+        # New Video Buffer System
+        self.video_buffer = RollingVideoBuffer(fps=fps_target)
+        
         logger.info(f"CameraStream created: id={camera_id} source={source} name={name}")
 
     def __repr__(self) -> str:
