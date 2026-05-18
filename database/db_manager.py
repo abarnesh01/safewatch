@@ -124,7 +124,8 @@ class DatabaseManager:
                 parent_incident_id INTEGER,
                 operator_notes TEXT,
                 tags TEXT,
-                metadata_json TEXT
+                metadata_json TEXT,
+                video_evidence_path TEXT
             )
         ''')
         
@@ -143,6 +144,11 @@ class DatabaseManager:
             cursor.execute("ALTER TABLE incidents ADD COLUMN metadata_json TEXT")
         except sqlite3.OperationalError:
             pass # Columns already exist
+            
+        try:
+            cursor.execute("ALTER TABLE incidents ADD COLUMN video_evidence_path TEXT")
+        except sqlite3.OperationalError:
+            pass # Column already exists
 
         # Audit Logs (Enterprise Requirement)
         cursor.execute('''
