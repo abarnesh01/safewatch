@@ -8,9 +8,12 @@ services:
     container_name: safewatch_core
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8000:8000" # API
+      - "8501:8501" # Dashboard
     environment:
       - SAFEWATCH_ENV=production
+      - CLOUD_HUB_URL=https://central.safewatch-enterprise.internal
+      - TZ=UTC
     env_file:
       - .env
     volumes:
@@ -18,21 +21,37 @@ services:
       - safewatch_snapshots:/app/snapshots
       - safewatch_recordings:/app/recordings
       - safewatch_cache:/app/runtime_cache
-    # For GPU Support (uncomment below if NVIDIA toolkit is installed)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+      - safewatch_models:/app/models
+      - safewatch_retraining:/app/retraining_dataset
+    # GPU Support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  prometheus-sidecar:
+    image: prom/prometheus:latest
+    container_name: safewatch_metrics
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
 
 volumes:
   safewatch_logs:
-    name: safewatch_logs_volume
   safewatch_snapshots:
-    name: safewatch_snapshots_volume
   safewatch_recordings:
-    name: safewatch_recordings_volume
   safewatch_cache:
-    name: safewatch_cache_volume
+  safewatch_models:
+  safewatch_retraining:
+  prometheus_data:
