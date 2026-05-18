@@ -174,6 +174,41 @@ class DatabaseManager:
             )
         ''')
         
+        # Phase 2: Face Recognition & Analytics
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS watchlists (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person_name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                embedding BLOB,
+                image_path TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS face_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                camera_id TEXT,
+                person_name TEXT,
+                category TEXT,
+                confidence REAL,
+                snapshot_path TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS heatmap_data (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                camera_id TEXT,
+                x INTEGER,
+                y INTEGER,
+                risk_score REAL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
         conn.commit()
 
     def get_heatmap_data(self, camera_id: str, start_date: str, end_date: str):
