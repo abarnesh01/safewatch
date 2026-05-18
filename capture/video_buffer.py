@@ -8,9 +8,8 @@ class RollingVideoBuffer:
     
     def __init__(self, fps: int = 15, pre_seconds: int = 7, post_seconds: int = 8):
         self.fps = fps
-        self.pre_frames = fps * pre_seconds
-        self.post_frames = fps * post_seconds
-        self.buffer = collections.deque(maxlen=self.pre_frames)
+        self.total_frames = fps * (pre_seconds + post_seconds)
+        self.buffer = collections.deque(maxlen=self.total_frames)
         self.lock = threading.Lock()
         
     def append_frame(self, frame):
@@ -18,17 +17,17 @@ class RollingVideoBuffer:
         with self.lock:
             self.buffer.append(frame.copy())
             
-    def export_evidence(self, post_event_frames: list, output_path: str, frame_size: tuple):
-        """Export the buffered pre-event frames and the post-event frames to an MP4 file."""
+    def export_evidence(self, output_path: str, frame_size: tuple):
+        """Export the entire buffered contents to an MP4 file."""
         try:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, self.fps, frame_size)
             
             with self.lock:
-                for frame in self.buffer:
-                    out.write(frame)
-                    
-            for frame in post_event_frames[:self.post_frames]:
+                # Copy the buffer to avoid holding the lock while writing
+                frames_to_write = list(self.buffer)
+                
+            for frame in frames_to_write:
                 out.write(frame)
                 
             out.release()
