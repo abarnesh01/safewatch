@@ -3,13 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 import uvicorn
 
-from api.routes import system, incidents, cameras
+from api.routes import system, incidents, cameras, analytics, watchlist
 from api.websocket_manager import ws_manager
 
 app = FastAPI(
     title="SafeWatch API",
     description="REST API and WebSocket event stream for SafeWatch platform.",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # CORS configuration
@@ -25,6 +25,8 @@ app.add_middleware(
 app.include_router(system.router, prefix="/api/system", tags=["System"])
 app.include_router(incidents.router, prefix="/api/incidents", tags=["Incidents"])
 app.include_router(cameras.router, prefix="/api/cameras", tags=["Cameras"])
+app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(watchlist.router, prefix="/api/watchlist", tags=["Watchlist"])
 
 @app.websocket("/ws/events")
 async def websocket_endpoint(websocket: WebSocket):
