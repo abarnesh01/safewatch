@@ -29,6 +29,7 @@ from threats.trespass_detector import TrespassDetector
 from threats.crowd_panic_detector import CrowdPanicDetector
 from threats.accident_detector import AccidentDetector
 from threats.abuse_detector import AbuseDetector
+from threats.loitering_detector import LoiteringDetector
 
 
 @dataclass
@@ -110,7 +111,8 @@ class ThreatEngine:
             "trespass": TrespassDetector(config, zone_manager),
             "crowd_panic": CrowdPanicDetector(config),
             "accident": AccidentDetector(config),
-            "abuse": AbuseDetector(config)
+            "abuse": AbuseDetector(config),
+            "loitering": LoiteringDetector(config)
         }
         
         # Adaptive Calibration Profiles
