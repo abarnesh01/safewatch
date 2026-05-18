@@ -156,6 +156,30 @@ class DatabaseManager:
         except sqlite3.OperationalError:
             pass
 
+        # Phase 4 MLOps & Feedback
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS models_registry (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                model_name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                weights_path TEXT NOT NULL,
+                accuracy REAL,
+                deployment_status TEXT DEFAULT 'STAGING',
+                training_date DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS operator_feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                incident_id INTEGER NOT NULL,
+                user_id TEXT,
+                feedback_type TEXT NOT NULL,
+                corrected_label TEXT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         # Audit Logs (Enterprise Requirement)
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS audit_logs (
