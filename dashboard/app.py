@@ -823,3 +823,94 @@ elif page == "📊 Detector Validation":
         cm = metrics["confusion_matrix"]
         fig = px.imshow(cm, x=classes, y=classes, text_auto=True, color_continuous_scale='Viridis', labels=dict(x="Predicted", y="Actual"))
         st.plotly_chart(fig, use_container_width=True)
+
+# ─── PAGE: Heatmaps (V2) ────────────────────────────────────────
+if page == "🔥 Heatmaps (V2)":
+    st.markdown('<div class="header-banner"><h1>🔥 Spatial Heatmaps</h1></div>', unsafe_allow_html=True)
+    st.markdown("Visualize foot traffic, dwell times, and incident density.")
+    
+    cameras = ["cam_01", "cam_02", "cam_03"]
+    selected_cam = st.selectbox("Select Camera View", cameras)
+    time_range = st.selectbox("Time Range", ["Last Hour", "Daily", "Weekly", "Monthly"])
+    
+    # Placeholder for the heatmap generator UI
+    import plotly.graph_objects as go
+    import numpy as np
+    
+    # Generate some dummy density data
+    z_data = np.random.poisson(lam=10, size=(10, 10))
+    fig = go.Figure(data=go.Contour(
+        z=z_data,
+        colorscale='Hot',
+        opacity=0.6
+    ))
+    fig.update_layout(title="Zone Occupancy Heatmap", height=500)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.info("💡 Real heatmap generation requires a background worker continuously updating coordinates in SQLite.")
+
+# ─── PAGE: Watchlists (V2) ──────────────────────────────────────
+if page == "👤 Watchlists (V2)":
+    st.markdown('<div class="header-banner"><h1>👤 Facial Watchlists</h1></div>', unsafe_allow_html=True)
+    
+    t1, t2 = st.tabs(["Active Watchlist", "Enroll New Identity"])
+    
+    with t1:
+        st.markdown("### Enrolled Identities")
+        # Placeholder for DB query
+        from recognition.watchlist_manager import WatchlistManager
+        manager = WatchlistManager(db)
+        wl = manager.get_watchlist()
+        if wl:
+            for w in wl:
+                st.write(f"- **{w['name']}** [{w['category']}]")
+        else:
+            st.info("No identities enrolled.")
+            
+    with t2:
+        st.markdown("### Enroll Person")
+        with st.form("enroll_form"):
+            name = st.text_input("Full Name")
+            category = st.selectbox("Category", ["Employee", "VIP", "Visitor", "Blacklist"])
+            image = st.file_uploader("Upload Clear Face Photo", type=["jpg", "png", "jpeg"])
+            
+            if st.form_submit_button("Extract & Enroll"):
+                st.warning("⚠️ Integration with InsightFace active. Running inference...")
+                import cv2
+                from recognition.face_detector import FaceRecognitionSystem
+                if image is not None:
+                    nparr = np.frombuffer(image.getvalue(), np.uint8)
+                    frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                    sys = FaceRecognitionSystem()
+                    faces = sys.detect_and_embed(frame)
+                    if faces:
+                        manager = WatchlistManager(db)
+                        manager.enroll_face(name, category, faces[0].embedding)
+                        st.success(f"Enrolled {name} successfully!")
+                    else:
+                        st.error("No face found in image.")
+
+# ─── PAGE: Analytics (V2) ───────────────────────────────────────
+if page == "📈 Analytics (V2)":
+    st.markdown('<div class="header-banner"><h1>📈 Risk & Analytics</h1></div>', unsafe_allow_html=True)
+    
+    st.markdown("### Real-time Site Risk Scoring")
+    from analytics.risk_analyzer import RiskAnalyzer
+    analyzer = RiskAnalyzer(db)
+    
+    # Dummy inputs for demonstration
+    crowd = st.slider("Live Crowd Density", 0, 100, 40)
+    incidents = st.slider("Incident Frequency", 0, 100, 25)
+    loitering = st.slider("Loitering Events", 0, 100, 10)
+    
+    score, classification = analyzer.calculate_risk(crowd, incidents, loitering)
+    
+    st.metric("Overall Threat Score", f"{score:.1f}/100", delta=classification, delta_color="inverse")
+    
+    st.progress(score / 100.0)
+    if classification == "HIGH":
+        st.error("🚨 SITE IS AT HIGH RISK. Increased patrols recommended.")
+    elif classification == "MEDIUM":
+        st.warning("⚠️ Site risk is elevated.")
+    else:
+        st.success("✅ Site operating normally.")
