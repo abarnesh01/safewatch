@@ -28,6 +28,15 @@ from alerts.snapshot_builder import SnapshotBuilder
 from alerts.telegram_bot import SafeWatchTelegramBot
 from utils.observability import ObservabilityEngine
 
+# Phase 2 Intelligence Layers
+from recognition.face_detector import FaceRecognitionSystem
+from recognition.watchlist_manager import WatchlistManager
+from recognition.face_matcher import FaceMatcher
+from analytics.heatmap_generator import HeatmapGenerator
+from analytics.risk_analyzer import RiskAnalyzer
+from threats.fusion_engine import FusionEngine
+from utils.observability import ObservabilityEngine
+
 
 class SafeWatchApp:
     """The core application coordinator with hardware auto-detection."""
