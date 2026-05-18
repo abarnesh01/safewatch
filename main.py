@@ -229,6 +229,35 @@ class SafeWatchApp:
                         if p.id in poses:
                             vt.update(p.id, poses[p.id], ts)
                             
+                    # Phase 2.5: Intelligence Pipeline
+                    self._heatmap_gen.record_coordinates(cam_id, persons)
+                    
+                    # Run face detection every 15 frames (1 sec) to save CPU
+                    if self._frame_count % 15 == 0:
+                        for p in persons:
+                            p.identity = {"person_name": "Unknown", "category": "UNKNOWN", "confidence": 0.0, "status": "UNKNOWN"}
+                            if hasattr(p, 'box') and p.box is not None:
+                                x1, y1, x2, y2 = map(int, p.box)
+                                if x2 > x1 and y2 > y1:
+                                    # Constrain ROI to frame boundaries
+                                    h, w = frame.shape[:2]
+                                    roi = frame[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+                                    
+                                    if roi.size > 0:
+                                        faces = self._face_recognizer.detect_and_embed(roi)
+                                        if faces:
+                                            match = self._face_matcher.match_face(faces[0].embedding)
+                                            p.identity = match
+                                            
+                                            # Async log face event
+                                            try:
+                                                self._db_manager.execute(
+                                                    "INSERT INTO face_events (camera_id, person_name, category, confidence) VALUES (?, ?, ?, ?)",
+                                                    (cam_id, match["person_name"], match["category"], match["confidence"])
+                                                )
+                                            except Exception as e:
+                                                logger.debug(f"Face event log failed: {e}")
+                            
                     report = self._threat_engine.analyze({
                         "frame": frame,
                         "camera_id": cam_id,
