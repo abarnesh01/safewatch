@@ -149,6 +149,12 @@ class DatabaseManager:
             cursor.execute("ALTER TABLE incidents ADD COLUMN video_evidence_path TEXT")
         except sqlite3.OperationalError:
             pass # Column already exists
+            
+        # Phase 3 Federation Migrations
+        try:
+            cursor.execute("ALTER TABLE incidents ADD COLUMN sync_status TEXT DEFAULT 'PENDING'")
+        except sqlite3.OperationalError:
+            pass
 
         # Audit Logs (Enterprise Requirement)
         cursor.execute('''
