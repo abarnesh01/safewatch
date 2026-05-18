@@ -156,6 +156,31 @@ class AlertManager:
             # 4. Auto Forensic Export for CRITICAL
             if is_critical and incident_id is not None:
                 threading.Thread(target=self._logger.export_forensic_bundle, args=(incident_id,), daemon=True).start()
+                
+                # Export video evidence
+                if "video_buffer" in frame_packet:
+                    video_buffer = frame_packet["video_buffer"]
+                    def export_video():
+                        # Wait for post-event frames to accumulate
+                        time.sleep(8)
+                        # Make sure directories exist
+                        from utils.runtime_isolation import RuntimePath
+                        RuntimePath.RECORDINGS.mkdir(parents=True, exist_ok=True)
+                        output_path = str(RuntimePath.RECORDINGS / f"incident_{incident_id}_{int(time.time())}.mp4")
+                        
+                        # Get frame size from the first frame in buffer if possible, else default
+                        frame_size = (640, 480)
+                        if len(video_buffer.buffer) > 0:
+                            f = video_buffer.buffer[0]
+                            frame_size = (f.shape[1], f.shape[0])
+                            
+                        video_buffer.export_evidence(output_path, frame_size)
+                        
+                        # Update DB with video path
+                        self._logger._db.execute("UPDATE incidents SET video_evidence_path = ? WHERE id = ?", (output_path, incident_id))
+                        logger.info(f"Updated incident {incident_id} with video evidence.")
+                        
+                    threading.Thread(target=export_video, daemon=True).start()
 
             alert_data = {
                 "threat_dict": threat_dict,

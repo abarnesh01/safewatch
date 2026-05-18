@@ -161,9 +161,6 @@ class CameraStream:
                 if frame.shape[1] != self._resolution[0] or frame.shape[0] != self._resolution[1]:
                     frame = cv2.resize(frame, self._resolution)
 
-                # Append to rolling video evidence buffer
-                self.video_buffer.append_frame(frame)
-
                 self._last_frame_time = now
 
                 # 3. Buffer management with jitter protection
