@@ -164,7 +164,8 @@ class FrameSampler:
                 "timestamp": now,
                 "frame_number": self._frame_number,
                 "has_motion": has_motion,
-                "scene_profile": self._scene_learner.get_profile()
+                "scene_profile": self._scene_learner.get_profile(),
+                "video_buffer": self._stream.video_buffer
             }
 
     @property
