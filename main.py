@@ -70,6 +70,14 @@ class SafeWatchApp:
         self._zone_manager = ZoneManager(self._config)
         self._threat_engine = ThreatEngine(self._config, zone_manager=self._zone_manager)
         
+        # Phase 2.5: Intelligence & Analytics
+        self._face_recognizer = FaceRecognitionSystem(use_gpu=(self._device == "cuda"))
+        self._watchlist_manager = WatchlistManager(self._db_manager)
+        self._face_matcher = FaceMatcher(self._watchlist_manager)
+        self._heatmap_gen = HeatmapGenerator(self._db_manager)
+        self._risk_analyzer = RiskAnalyzer(self._db_manager)
+        self._fusion_engine = FusionEngine()
+        
         # 5. Initialize Alerting
         self._telegram_bot = None
         if self._config["alerts"].get("telegram_enabled", False):
