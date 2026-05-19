@@ -256,7 +256,86 @@ class DatabaseManager:
         return rows
 
     def get_daily_stats(self, date_str: str = None):
-        pass
+        """Return daily incident statistics."""
+        if date_str is None:
+            date_str = __import__('datetime').date.today().isoformat()
+        try:
+            total = self.fetch_all(
+                "SELECT count(*) as cnt FROM incidents WHERE date(timestamp) = ?", (date_str,)
+            )
+            by_type = self.fetch_all(
+                "SELECT threat_type, count(*) as cnt FROM incidents WHERE date(timestamp) = ? GROUP BY threat_type", (date_str,)
+            )
+            by_severity = self.fetch_all(
+                "SELECT severity, count(*) as cnt FROM incidents WHERE date(timestamp) = ? GROUP BY severity", (date_str,)
+            )
+            return {
+                "total_incidents": total[0]["cnt"] if total else 0,
+                "by_type": {r["threat_type"]: r["cnt"] for r in by_type},
+                "by_severity": {r["severity"]: r["cnt"] for r in by_severity},
+            }
+        except Exception as e:
+            logger.error(f"get_daily_stats error: {e}")
+            return {"total_incidents": 0, "by_type": {}, "by_severity": {}}
+
+    def get_camera_status(self):
+        """Returns camera health/status information. Temporary fallback implementation."""
+        try:
+            return []
+        except Exception as e:
+            logger.error(f"Camera status error: {e}")
+            return []
+
+    def get_incidents(self, start_date=None, end_date=None, camera_id=None,
+                      threat_type=None, severity=None, limit=100):
+        """Fetch filtered incidents from the database."""
+        try:
+            query = "SELECT * FROM incidents WHERE 1=1"
+            params = []
+            if start_date:
+                query += " AND timestamp >= ?"
+                params.append(start_date)
+            if end_date:
+                query += " AND timestamp <= ?"
+                params.append(end_date)
+            if camera_id:
+                query += " AND camera_id = ?"
+                params.append(camera_id)
+            if threat_type:
+                query += " AND threat_type = ?"
+                params.append(threat_type)
+            if severity:
+                query += " AND severity = ?"
+                params.append(severity)
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            params.append(limit)
+            return self.fetch_all(query, tuple(params))
+        except Exception as e:
+            logger.error(f"get_incidents error: {e}")
+            return []
+
+    def get_hourly_distribution(self, date_str: str):
+        """Get incident count grouped by hour for a given date."""
+        try:
+            rows = self.fetch_all(
+                "SELECT strftime('%H', timestamp) as hour, count(*) as cnt "
+                "FROM incidents WHERE date(timestamp) = ? GROUP BY hour ORDER BY hour",
+                (date_str,)
+            )
+            return {r["hour"]: r["cnt"] for r in rows}
+        except Exception as e:
+            logger.error(f"get_hourly_distribution error: {e}")
+            return {}
+
+    def get_system_logs(self, limit: int = 50):
+        """Fetch recent system log entries."""
+        try:
+            return self.fetch_all(
+                "SELECT * FROM system_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
+            )
+        except Exception as e:
+            logger.error(f"get_system_logs error: {e}")
+            return []
 
     def execute(self, query: str, params: tuple = ()):
         conn = self._get_connection()
