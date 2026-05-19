@@ -72,10 +72,10 @@ class SafeWatchApp:
         
         # Phase 2.5: Intelligence & Analytics
         self._face_recognizer = FaceRecognitionSystem(use_gpu=(self._device == "cuda"))
-        self._watchlist_manager = WatchlistManager(self._db_manager)
+        self._watchlist_manager = WatchlistManager(self._db)
         self._face_matcher = FaceMatcher(self._watchlist_manager)
-        self._heatmap_gen = HeatmapGenerator(self._db_manager)
-        self._risk_analyzer = RiskAnalyzer(self._db_manager)
+        self._heatmap_gen = HeatmapGenerator(self._db)
+        self._risk_analyzer = RiskAnalyzer(self._db)
         self._fusion_engine = FusionEngine()
         
         # 5. Initialize Alerting
@@ -251,7 +251,7 @@ class SafeWatchApp:
                                             
                                             # Async log face event
                                             try:
-                                                self._db_manager.execute(
+                                                self._db.execute(
                                                     "INSERT INTO face_events (camera_id, person_name, category, confidence) VALUES (?, ?, ?, ?)",
                                                     (cam_id, match["person_name"], match["category"], match["confidence"])
                                                 )
